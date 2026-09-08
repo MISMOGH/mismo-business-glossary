@@ -1325,7 +1325,12 @@ function applyDraftFile(payload,baseRows){
     if(i>-1) master[i]={...row}; else master.push({...row});
   });
   (payload.diff.added||[]).forEach(row=>{ if(!byId.has(row.ID)) master.push({...row}); });
-  vocab=payload.vocab||vocab; staged=payload.staged||{}; resolved=payload.resolved||{};
+  // A draft file can legitimately carry an empty vocabulary — the reset file
+  // written after a publish does. Only adopt it if it has the expected shape,
+  // otherwise the vocabulary is rebuilt from the data below.
+  if(payload.vocab && Array.isArray(payload.vocab.TermType)
+     && payload.vocab.TermType.length) vocab=payload.vocab;
+  staged=payload.staged||{}; resolved=payload.resolved||{};
   touched=payload.touched||{}; releases=payload.releases||[]; version=payload.version||1;
   fixCount=payload.fixCount||0; newCounter=payload.newCounter||1;
 }
@@ -1357,9 +1362,9 @@ async function repoLoad(){
     lastAutoSave=payload.savedAt;
   }else{
     master=rows; baseline=rows.map(r=>({...r})); touched={}; staged={}; resolved={};
-    if(!vocab.TermType.length) seedVocab();
+    if(!vocab?.TermType?.length) seedVocab();
   }
-  if(!vocab.TermType.length) seedVocab();
+  if(!vocab?.TermType?.length) seedVocab();
   await idbSet('lastAutoSave',lastAutoSave);
   await persist(); renderAll();
   return {terms:master.length, draft:!!draftText};
@@ -1801,7 +1806,7 @@ async function bootstrap(force){
         newCounter=(await idbGet('newCounter'))||1;
         repo=(await idbGet('repo'))||null;
         lastAutoSave=(await idbGet('lastAutoSave'))||null;
-        if(!vocab.TermType.length) seedVocab();
+        if(!vocab?.TermType?.length) seedVocab();
         renderAll();
         if(repo) verifyRepo();
         return;
