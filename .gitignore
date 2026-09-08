@@ -1,0 +1,24 @@
+# Console exports and backups. These are working files, sometimes large, and
+# often contain an in-progress draft. The committed data lives in data/.
+GlossaryItems_*.csv
+GlossaryChangeSet_*.csv
+GlossaryConsoleBackup_*.json
+
+# Scratch directory for source exports used by tools/extract-data.py
+_source/
+
+# Build output
+_site/
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+*.swp
+
+# Python
+__pycache__/
+*.pyc
+.venv/
