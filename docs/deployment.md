@@ -108,8 +108,8 @@ that needs a backend, and hosting the current console does not provide one.
 
 ## Cutover checklist
 
-- [ ] Public page reads `data/glossary.json` and performs acceptably at 8,397 terms
-- [ ] Permalinks resolve, or are removed from the UI until they do
+- [x] Public page reads `data/glossary.json` and performs acceptably at 8,397 terms
+- [x] Permalinks resolve (hash-based, so no rewrite rule is needed on any host)
 - [ ] Console hosting decision made and recorded here
 - [ ] AWS resources provisioned; certificate validated in `us-east-1`
 - [ ] Deployment role/user created and its credentials added to GitHub

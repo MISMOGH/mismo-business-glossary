@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Business Glossary — index list</title>
+<title>Business Glossary — MISMO</title>
+<meta name="description" content="Standard definitions for terms used across the mortgage industry.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Libre+Franklin:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -41,6 +42,14 @@
   .searchwrap input:focus{outline:none; border-color:var(--brand); box-shadow:0 0 0 3px var(--brand-soft);}
   .cnt{font-size:13px; color:var(--ink-faint); font-variant-numeric:tabular-nums; white-space:nowrap;}
 
+  /* letter jump bar */
+  .alpha{display:flex; flex-wrap:wrap; gap:2px; background:var(--card); border:1px solid var(--line);
+         border-radius:10px; padding:7px 9px; margin-bottom:12px;}
+  .alpha button{font-family:inherit; font-size:12px; font-weight:700; min-width:23px; padding:3px 0;
+    border:none; background:none; border-radius:5px; cursor:pointer; color:var(--brand); flex:1;}
+  .alpha button:hover:not(:disabled){background:var(--brand-soft);}
+  .alpha button:disabled{color:#C7CCD8; cursor:default;}
+
   /* active filter summary */
   .fbar{display:none; background:var(--card); border:1px solid var(--brand); border-radius:10px;
         padding:11px 14px; margin-bottom:12px;}
@@ -66,12 +75,14 @@
   /* index list */
   .idx{background:var(--card); border:1px solid var(--line); border-radius:var(--radius); overflow:hidden;}
   .idx-letter{padding:7px 20px; background:var(--paper); border-bottom:1px solid var(--line);
-              font-size:11px; font-weight:700; letter-spacing:.08em; color:var(--ink-faint);}
+              font-size:11px; font-weight:700; letter-spacing:.08em; color:var(--ink-faint);
+              position:sticky; top:0; z-index:3;}
   .idx-row{border-bottom:1px solid var(--line-soft);}
   .idx-row:last-child{border-bottom:none;}
   .idx-head{width:100%; display:flex; align-items:center; gap:11px; padding:11px 20px;
             background:none; border:none; cursor:pointer; font-family:inherit; text-align:left;}
   .idx-head:hover{background:var(--paper);}
+  .idx-head:focus-visible{outline:2px solid var(--brand); outline-offset:-2px;}
   .idx-row.open .idx-head{background:var(--brand-soft);}
   .idx-term{font-weight:600; font-size:14.5px; color:var(--ink);}
   .idx-row.open .idx-term{color:var(--brand-text);}
@@ -81,6 +92,8 @@
   .idx-body{display:none; padding:2px 20px 20px;}
   .idx-row.open .idx-body{display:block;}
   .idx-def{font-size:15px; line-height:1.68; margin:6px 0 16px; max-width:70ch;}
+  .idx-row.target{animation:flash 1.6s ease;}
+  @keyframes flash{0%,55%{background:#FFF8DC;}100%{background:transparent;}}
 
   /* --- three classifications side by side, divided --- */
   .cls3{display:grid; grid-template-columns:repeat(3,1fr); border:1px solid var(--line);
@@ -115,9 +128,13 @@
          box-shadow:inset 0 0 0 1px rgba(18,93,171,.06);}
   .tpill:hover{background:var(--brand-soft); border-color:var(--brand);}
   .relv .none{color:var(--ink-faint); font-size:12.5px;}
-  .permal{font-size:12px; color:var(--ink-faint); margin-top:13px;}
+  .permal{display:flex; align-items:center; gap:9px; font-size:12px; color:var(--ink-faint); margin-top:13px;}
   .permal code{background:var(--paper); border:1px solid var(--line); border-radius:5px;
-               padding:3px 7px; font-family:ui-monospace,Menlo,monospace; font-size:11.5px;}
+               padding:3px 7px; font-family:ui-monospace,Menlo,monospace; font-size:11.5px;
+               overflow-wrap:anywhere;}
+  .copy{font-family:inherit; font-size:11.5px; font-weight:600; color:var(--brand); background:none;
+        border:1px solid var(--line); border-radius:6px; padding:3px 9px; cursor:pointer; white-space:nowrap;}
+  .copy:hover{border-color:var(--brand); background:var(--brand-soft);}
 
   /* reference / filter panel */
   .refpanel{background:var(--card); border:1px solid var(--line); border-radius:var(--radius);
@@ -160,6 +177,19 @@
   .sw-tt{background:var(--tt-soft); border-color:var(--tt);}
   mark{background:#FFF1B8; padding:0 1px; border-radius:2px;}
   .empty{padding:44px 20px; text-align:center; color:var(--ink-faint);}
+  .more{padding:16px 20px; text-align:center; color:var(--ink-faint); font-size:13px;
+        border-top:1px solid var(--line-soft);}
+  .more.skipped{border-top:none; border-bottom:1px solid var(--line); background:var(--paper);
+                display:flex; align-items:center; justify-content:center; gap:9px;}
+  .loadfail{margin:22px 0; background:var(--card); border:1px solid #F0C9CB; border-left:3px solid #B4232C;
+            border-radius:0 10px 10px 0; padding:18px 20px;}
+  .loadfail h2{margin:0 0 6px; font-size:15px; color:#B4232C;}
+  .loadfail p{margin:0 0 8px; font-size:13.5px; color:var(--ink-soft);}
+  .loadfail code{background:var(--paper); border:1px solid var(--line); border-radius:5px; padding:2px 6px;
+                 font-family:ui-monospace,Menlo,monospace; font-size:12px;}
+  @media (prefers-reduced-motion:reduce){
+    *{scroll-behavior:auto !important; animation:none !important; transition:none !important;}
+  }
 </style>
 </head>
 <body>
@@ -179,10 +209,12 @@
     <div class="toolbar">
       <div class="searchwrap">
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></svg>
-        <input type="search" id="q" placeholder="Search terms and definitions…" autocomplete="off">
+        <input type="search" id="q" placeholder="Search terms and definitions…" autocomplete="off" disabled>
       </div>
-      <span class="cnt" id="cnt"></span>
+      <span class="cnt" id="cnt">Loading…</span>
     </div>
+
+    <div class="alpha" id="alpha" hidden></div>
 
     <div class="fbar" id="fbar">
       <div class="fbar-top">
@@ -197,7 +229,7 @@
       <div class="fexplain" id="fexplain"></div>
     </div>
 
-    <div class="idx" id="list"></div>
+    <div class="idx" id="list"><div class="empty">Loading the glossary…</div></div>
   </div>
 
   <div class="refpanel">
@@ -210,16 +242,17 @@
   </div>
 </div></div>
 
-<script id="terms" type="application/json">[{"id":"5f264d39-dc9f-4334-9e6c-6edd3794c67e","term":"Aggregate Analysis","definition":"An accounting method a servicer uses in conducting an escrow account analysis by computing the sufficiency of escrow account funds by analyzing the account as a whole.","source":"MBA Glossary","termType":"Process","focusArea":"#MBAGlossary","aka":["c74e668f-4471-47a1-bd1e-c15b153df3dd"],"related":["ae9d978a-50c6-4833-8ee8-c6eb92ceaa2d"]},{"id":"041f4cd7-5a6b-4ff0-9825-ae91d83e7fed","term":"Amortization","definition":"Repayment of a mortgage debt with periodic payments of both principal and interest, calculated to retire the obligation at the end of a fixed period of time.","source":"MBA Glossary","termType":"Process","focusArea":"#MBAGlossary","aka":[],"related":["49024730-057f-40ca-ae64-1737c4c3dffd","1c7efd2a-c13e-4263-a4d1-722976a555d6"]},{"id":"1575970c-07d9-4f8b-ae62-dce8da40bbd6","term":"Annual Percentage Rate (APR)","definition":"A term defined in section 106 of the federal Truth in Lending Act (15 USC 1606), which expresses on an annualized basis the charges imposed on the borrower to obtain a loan (defined in the Act as \"finance charges\"), including interest, discount and other costs.","source":"MBA Glossary","termType":"Data","focusArea":"#MBAGlossary|#MISMOApprovedAcronym","aka":[],"related":["1c7efd2a-c13e-4263-a4d1-722976a555d6","31cdd7dd-bdcf-4779-aa32-b5d6d928a70e","ab672aa6-0cd8-4a38-9b38-51fa37b44354"]},{"id":"ba71870f-e47d-4a11-bdb5-e27288742ff9","term":"Appraisal","definition":"An opinion or estimate of value. Also refers to the process by which a value estimate is obtained.","source":"MBA Glossary","termType":"Document","focusArea":"#MBAGlossary","aka":[],"related":["76b17ce2-6de1-4de7-a1a8-92aa078492e9","40e64c65-a7da-4c5e-9650-dd8e50eb0454"]},{"id":"8e126074-39ba-429a-831f-eb236bcdbb53","term":"Borrower","definition":"A mortgagor who receives funds in the form of a loan with the obligation of repaying the loan with interest (if applicable), and in addition, any person purchasing (aka purchaser) the real property securing the loan, executing the promissory note, executing a guaranty of the debt evidenced by the promissory note, or signing a security instrument in connection with a loan.","source":"MBA Glossary","termType":"Actor","focusArea":"#MBAGlossary","aka":[],"related":["390e39e7-d02e-4365-8139-3a1d4b539738","18d2c057-23d0-4f99-b4a8-da86d4b8793f","76b17ce2-6de1-4de7-a1a8-92aa078492e9"]},{"id":"ed5a3210-bca9-40a0-8223-42604464c9bf","term":"Closing Date","definition":"The date the closing documents were fully executed and the borrower becomes contractually responsible for the debt. Depending on the location (wet-sign, dry-sign, table-funded and/or escrow state) of the loan closing, the Closing Date may be the same date as either the Document Preparation Date and/or the Execution Date and/or the Recorded Date.","source":"MISMO Logical Data Dictionary (LDD)","termType":"Data","focusArea":"#LDD|#ClosingDisclosure|#LoanApplication|#iLAD","aka":[],"related":["31cdd7dd-bdcf-4779-aa32-b5d6d928a70e"]},{"id":"31cdd7dd-bdcf-4779-aa32-b5d6d928a70e","term":"Closing Disclosure","definition":"The CFPB Closing Disclosure document. Provides disclosures that help consumers in understanding all of the costs of the transaction.","source":"LDD Document","termType":"Document","focusArea":"#Origination|#LDD","aka":[],"related":["ab672aa6-0cd8-4a38-9b38-51fa37b44354","ed5a3210-bca9-40a0-8223-42604464c9bf","1575970c-07d9-4f8b-ae62-dce8da40bbd6"]},{"id":"390e39e7-d02e-4365-8139-3a1d4b539738","term":"Co-Borrower","definition":"Second or additional person equally responsible for payments on a mortgage. A co-borrower does not have to take title to the property, but usually has to sign the mortgage note.","source":"MBA Glossary","termType":"Actor","focusArea":"#MBAGlossary","aka":[],"related":["8e126074-39ba-429a-831f-eb236bcdbb53"]},{"id":"18d2c057-23d0-4f99-b4a8-da86d4b8793f","term":"Credit Report","definition":"1) A report run by an independent credit agency which verifies certain information concerning an applicantâ€™s credit standing 2) Describes the borrowers credit history. Provided by a credit reporting bureau, or a service which consolidates reports from multiple sources into a single report (Tri-merge). AKA: Tri-Merge, Residential Mortgage Credit Report (RMCR).","source":"LDD Document|MBA Glossary","termType":"Document","focusArea":"#LDD|#MBAGlossary|#Origination|#CreditReporting","aka":[],"related":["8e126074-39ba-429a-831f-eb236bcdbb53","76b17ce2-6de1-4de7-a1a8-92aa078492e9"]},{"id":"824651eb-c7b3-4802-8ecc-484610b5018d","term":"Deed Of Trust","definition":"A type of security instrument in which the borrower conveys title to real property to a third party (trustee) to be held in trust as security for the lender, with the provision that the trustee shall reconvey the title upon the payment of the debt and, conversely, will sell the land and pay the debt in the event of a default by the borrower. Also see MORTGAGE.","source":"MBA Glossary","termType":"Document","focusArea":"#MBAGlossary","aka":["73e29dd6-cd7b-4fae-8b0f-a5568816656c"],"related":["40e64c65-a7da-4c5e-9650-dd8e50eb0454","a7140b72-279f-4982-af85-9e49e58ca878"]},{"id":"7bdf0457-669f-46e1-b141-50a30fa1feb9","term":"Delinquency","definition":"Failure of a borrower to make timely payments specified under a loan agreement.","source":"MBA Glossary","termType":"Process","focusArea":"#MBAGlossary","aka":[],"related":["a7140b72-279f-4982-af85-9e49e58ca878"]},{"id":"ae9d978a-50c6-4833-8ee8-c6eb92ceaa2d","term":"Escrow","definition":"An item of value, money or documents, deposited with a third party to be delivered upon the fulfillment of a condition. For example, the deposit by a borrower with the lender of funds to pay taxes and insurance premiums when they become due, or the deposit of funds or documents with an attorney or escrow agent to be disbursed upon the closing of a sale of real estate. In some parts of the country, escrows of taxes and insurance premiums are called impounds or reserves.","source":"MBA Glossary","termType":"Data","focusArea":"#MBAGlossary","aka":["3cf3cd60-43d7-481b-956f-cb51e85c7556","9279a779-0452-4275-a79b-2e95bfd3c650"],"related":["c74e668f-4471-47a1-bd1e-c15b153df3dd","531a9c64-95e4-4d07-89b3-0c5a4be0f7c8","5f264d39-dc9f-4334-9e6c-6edd3794c67e","49024730-057f-40ca-ae64-1737c4c3dffd"]},{"id":"9279a779-0452-4275-a79b-2e95bfd3c650","term":"Escrow Account","definition":"The segregated trust account in which escrow funds are held.","source":"MBA Glossary","termType":"Data","focusArea":"#MBAGlossary","aka":["ae9d978a-50c6-4833-8ee8-c6eb92ceaa2d"],"related":["531a9c64-95e4-4d07-89b3-0c5a4be0f7c8","c74e668f-4471-47a1-bd1e-c15b153df3dd"]},{"id":"c74e668f-4471-47a1-bd1e-c15b153df3dd","term":"Escrow Analysis","definition":"The periodic examination of escrow accounts to determine if current monthly deposits will provide sufficient funds to pay taxes, insurance and other bills when due.","source":"MBA Glossary","termType":"Process","focusArea":"#MBAGlossary","aka":["5f264d39-dc9f-4334-9e6c-6edd3794c67e"],"related":["ae9d978a-50c6-4833-8ee8-c6eb92ceaa2d","9279a779-0452-4275-a79b-2e95bfd3c650","531a9c64-95e4-4d07-89b3-0c5a4be0f7c8"]},{"id":"531a9c64-95e4-4d07-89b3-0c5a4be0f7c8","term":"Escrow Balance Amount","definition":"Escrow balance on the loan net of any escrow advances. May be a negative amount.","source":"MISMO Logical Data Dictionary (LDD)","termType":"Data","focusArea":"#LDD|#LoanDelivery","aka":[],"related":["ae9d978a-50c6-4833-8ee8-c6eb92ceaa2d","9279a779-0452-4275-a79b-2e95bfd3c650"]},{"id":"a7140b72-279f-4982-af85-9e49e58ca878","term":"Foreclosure","definition":"A legal procedure in which a mortgaged property is sold in a legal process to pay the outstanding debt in case of default.","source":"MBA Glossary","termType":"Process","focusArea":"#MBAGlossary","aka":[],"related":["7bdf0457-669f-46e1-b141-50a30fa1feb9","73e29dd6-cd7b-4fae-8b0f-a5568816656c","824651eb-c7b3-4802-8ecc-484610b5018d"]},{"id":"3cf3cd60-43d7-481b-956f-cb51e85c7556","term":"Impound","definition":"See ESCROW.","source":"MBA Glossary","termType":"Process","focusArea":"#MBAGlossary","aka":["ae9d978a-50c6-4833-8ee8-c6eb92ceaa2d"],"related":["9279a779-0452-4275-a79b-2e95bfd3c650","c74e668f-4471-47a1-bd1e-c15b153df3dd"]},{"id":"1c7efd2a-c13e-4263-a4d1-722976a555d6","term":"Interest Rate","definition":"Percentage paid for the use of money, usually expressed as an annual percentage.","source":"MBA Glossary","termType":"Data","focusArea":"#MBAGlossary","aka":[],"related":["1575970c-07d9-4f8b-ae62-dce8da40bbd6","041f4cd7-5a6b-4ff0-9825-ae91d83e7fed","49024730-057f-40ca-ae64-1737c4c3dffd"]},{"id":"73e29dd6-cd7b-4fae-8b0f-a5568816656c","term":"Lien","definition":"A legal hold or claim of a creditor on the property of another as security for a debt. Liens may be against real or personal property.","source":"MBA Glossary","termType":"Document","focusArea":"#MBAGlossary","aka":["824651eb-c7b3-4802-8ecc-484610b5018d"],"related":["40e64c65-a7da-4c5e-9650-dd8e50eb0454","a7140b72-279f-4982-af85-9e49e58ca878"]},{"id":"ab672aa6-0cd8-4a38-9b38-51fa37b44354","term":"Loan Estimate","definition":"The CFPB Loan Estimate document. Provides disclosures that help consumers in understanding the key features, costs, and risks of the mortgage for which they are applying. The Loan Estimate replaces the GFE document and the initial TILDisclosure document.","source":"LDD Document","termType":"Document","focusArea":"#Origination|#LDD","aka":[],"related":["31cdd7dd-bdcf-4779-aa32-b5d6d928a70e","1575970c-07d9-4f8b-ae62-dce8da40bbd6"]},{"id":"d532916f-aa33-45bb-ae98-1de2f285828d","term":"Machine Learning","definition":"A technique used by computers to take data as input, find patterns, and summarize the pattern in a mathematically precise way.","source":"Artificial Intelligence Glossary","termType":"Process","focusArea":"#ArtificialIntelligence","aka":[],"related":[]},{"id":"49024730-057f-40ca-ae64-1737c4c3dffd","term":"Principal","definition":"The original balance of money lent, excluding interest. Also, the remaining balance of a loan, excluding interest.","source":"MBA Glossary","termType":"Data","focusArea":"#MBAGlossary","aka":[],"related":["041f4cd7-5a6b-4ff0-9825-ae91d83e7fed","1c7efd2a-c13e-4263-a4d1-722976a555d6","ae9d978a-50c6-4833-8ee8-c6eb92ceaa2d"]},{"id":"f1c32eb1-e9ec-4cdd-96f9-08b9b50db89a","term":"Private Mortgage Insurance (PMI)","definition":"Insurance written by a private company protecting the mortgage lender against financial loss occasioned by a borrower defaulting on the mortgage.","source":"MBA Glossary","termType":"Process","focusArea":"#MBAGlossary","aka":[],"related":["8e126074-39ba-429a-831f-eb236bcdbb53","76b17ce2-6de1-4de7-a1a8-92aa078492e9"]},{"id":"40e64c65-a7da-4c5e-9650-dd8e50eb0454","term":"Title","definition":"Written evidence of the right to or ownership in property. In the case of real estate, the documentary evidence of ownership is the title deed that specifies in whom the legal estate is vested and the history of ownership and transfers. Title may be acquired through purchase, inheritance, devise, gift or through foreclosure of a mortgage.","source":"MBA Glossary","termType":"Document","focusArea":"#MBAGlossary","aka":[],"related":["73e29dd6-cd7b-4fae-8b0f-a5568816656c","824651eb-c7b3-4802-8ecc-484610b5018d","ba71870f-e47d-4a11-bdb5-e27288742ff9"]},{"id":"76b17ce2-6de1-4de7-a1a8-92aa078492e9","term":"Underwriting","definition":"In mortgage banking, the analysis of the risk involved in making a mortgage loan to determine whether the risk is acceptable to the lender. Underwriting involves the evaluation of the property as outlined in the appraisal report, and of the borrower's ability and willingness to repay the loan.","source":"MBA Glossary","termType":"Process","focusArea":"#MBAGlossary","aka":[],"related":["18d2c057-23d0-4f99-b4a8-da86d4b8793f","ba71870f-e47d-4a11-bdb5-e27288742ff9","8e126074-39ba-429a-831f-eb236bcdbb53"]}]</script>
-<script id="ref" type="application/json">{"termTypes":{"Actor":"Represents an individual, entity, or system, or a collection of individuals or entities, or systems. They are often associated with a particular role in the mortgage process.","Data":"Represents data points as documented in the MISMO Logical Data Dictionary (LDD). It also includes items from a third party source (e.g., amounts, dates, calculations, rates, and numbers).","Document":"Record(s) of information, typically in written or digital form, that provides evidence, details, or context about a particular topic, event, or transaction (e.g., Uniform Residential Loan Application).","Event":"Thing that happens, especially one that is of importance (e.g., an act of God; accident; accretion). It occurs at a particular date or time period.","Other":"A category for terms that do not fall into one of the other defined category types.","Outcome":"The result of a process whether intended or unintended.","Process":"Represents an action, or actions, to be taken (e.g., Take Loan Application; Underwrite Loan; Close Loan; Origination). A process tends to occur over time.","Product":"Represents the characteristics of a financial instrument secured by property.","Regulation":"A rule or set of rules that control or govern a system, process, or behavior."},"focusAreas":{"#Appraisal":"A set of terms typically used in various appraisal forms, for example, agency forms and the GSE's Uniform Appraisal Dataset (UAD).","#ArtificialIntelligence":"A set of terms approved by the MISMO Artificial Intelligence Community of Practice.","#ClosingDisclosure":"A set of terms typically used in loan closing disclosures, for example, the Loan Estimate, Closing Disclosure, or datapoints from the GSE Uniform Closing Dataset (UCD).","#Commercial":"A set of terms, processes or documents as it relates to the mortgage business where the loan is secured by non-residential income producing property.","#CreditReporting":"A set of terms from the MISMO Reference Model, grouped by the Credit Reporting Community of Practice.","#DGMFitForPurpose":"A set of terms grouped by the MISMO Data Governance & Management (DGM) Fit For Purpose Framework artifact.","#eMortgage":"A set of terms that refer to electronically signed closing documents paired with an original digital promissory note.","#iLAD":"A set of terms that comprise the Industry Loan Application Dataset (iLAD).","#LDD":"A set of terms grouped by the MISMO Logical Data Dictionary (LDD) data points.","#LoanApplication":"A set of terms that comprise the mapping of each Uniform Residential Loan Application (URLA) field to supporting MISMO v3.4 fields.","#LoanDelivery":"A set of terms typically used in a Loan Delivery transaction, for example, datapoints from the GSE Uniform Loan Delivery Dataset (ULDD).","#MBAGlossary":"A set of terms included in the Mortgage Bankers Association (MBA) Business Glossary.","#MISMOApprovedAcronym":"A set of acronyms that have been approved for use within a MISMO data point name, definition or enumeration.","#MISMOGOV":"__UNDOCUMENTED__","#MISMOLifeOfLoan":"A set of terms grouped by the MISMO products and their relationship to “typical” processes within the mortgage lifecycle.","#Origination":"A set of terms, processes or documents related to the completion of the residential or commercial mortgage application.","#Secondary":"A set of terms, processes or documents related to developing mortgage products to originate, managing interest rate risk, setting pricing, and executing the sale, securitization, or retention of mortgage loans in a way that optimizes liquidity, profitability, and balance sheet efficiency.","#Servicing":"A set of terms, processes or documents related to the following mortgage banking functions: receipts of payments, customer service, escrow administration, investor accounting, collections and foreclosures."},"sources":{"Artificial Intelligence Glossary":"A set of terms originating from the Artificial Intelligence Community of Practice published AI Glossary.","Data Governance & Management CoP (DGM)":"A set of terms grouped by the MISMO Data Governance & Management (DGM) Community of Practice.","LDD Acronym":"A set of terms sourced from the MISMO Logical Data Dictionary (LDD) Approved Acronym List.","LDD Attribute":"A set of terms sourced from the MISMO Logical Data Dictionary (LDD) Attribute list.","LDD Document":"A set of terms sourced from the MISMO Logical Data Dictionary (LDD) Document Type Enumerations List.","MBA Glossary":"A set of terms included in the Mortgage Bankers Association (MBA) Business Glossary. Published on MISMO's site as “MBA Business Glossary”; the glossary data uses the shorter “MBA Glossary”.","MISMO (Non-LDD)":"A set of terms originating from a MISMO source, including from other artifacts published by MISMO workgroups (e.g. white papers).","MISMO Governing Documents":"A set of terms derived from the MISMO Development Process Document (DPD), MISMO Policies and Procedures (P&P), or MISMO Intellectual Property Rights (IPR).","MISMO Life of Loan":"A set of terms grouped by the MISMO Life of Loan Business Process Model and Community of Practice.","MISMO Logical Data Dictionary (LDD)":"A set of terms that comprise the MISMO model.","MISMO eMortgage":"A set of terms that refer to electronically signed closing documents paired with an original digital promissory note."}}</script>
 <script>
-const TERMS=JSON.parse(document.getElementById('terms').textContent);
-const REF=JSON.parse(document.getElementById('ref').textContent);
-const byId=new Map(TERMS.map(t=>[t.id,t]));
-const $=id=>document.getElementById(id);
-const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const split=v=>String(v||'').split('|').map(s=>s.trim()).filter(Boolean);
-const slug=s=>String(s).toLowerCase().replace(/\([^)]*\)/g,'').replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
+'use strict';
+
+/* ============================================================================ CONFIG */
+const DATA_URL = 'data/glossary.json';
+const REF_URL  = 'data/reference.json';
+
+/* Rows render in chunks as the reader scrolls. Building all 8,397 rows in one
+   pass blocks the main thread long enough to be felt on every keystroke; a
+   chunk is imperceptible. */
+const CHUNK = 60;
 
 const KINDS=[
   {key:'focusAreas', field:'focusArea', label:'Focus area', plural:'Focus areas', cls:'fa',  sw:'sw-fa'},
@@ -227,92 +260,310 @@ const KINDS=[
   {key:'sources',    field:'source',    label:'Source',     plural:'Sources',     cls:'src', sw:'sw-src'}
 ];
 const kindOf=k=>KINDS.find(x=>x.key===k);
-/* Facet counts are computed against what is currently reachable, not the whole
-   glossary, so a classification that can no longer produce a result disappears
-   instead of leading to an empty list.
 
-   In "match all" the base is the current result set, so an option's count is
-   exactly what you would get by adding it. In "match any" adding an option
-   widens rather than narrows, so the base is everything matching the search
-   box - counting against the current results would wrongly hide options. */
-const matchesQuery=t=>!q||t.term.toLowerCase().includes(q.toLowerCase())
-                       ||t.definition.toLowerCase().includes(q.toLowerCase());
-const searchBase=()=>TERMS.filter(matchesQuery);
-function facetCounts(k){
-  const base = mode==='all' ? hits() : searchBase();
-  const m=new Map();
-  base.forEach(t=>split(t[k.field]).forEach(v=>m.set(v,(m.get(v)||0)+1)));
-  return m;
-}
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const split=v=>String(v||'').split('|').map(s=>s.trim()).filter(Boolean);
+/* Four term names contain a literal line break; collapse whitespace for display
+   and for slugs so neither renders unpredictably. */
+const flat=s=>String(s||'').replace(/\s+/g,' ').trim();
+/* Parenthetical text is kept: dropping it collides "Abatement (Rental)" with
+   "Abatement (Tax)". Verified zero collisions across all 8,397 terms. */
+const slug=s=>flat(s).toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
 
-const akaOf=t=>[...new Set([...t.aka,...TERMS.filter(o=>o.id!==t.id&&o.aka.includes(t.id)).map(o=>o.id)])];
-const relOf=t=>{const a=new Set(akaOf(t));
-  return [...new Set([...t.related,...TERMS.filter(o=>o.id!==t.id&&o.related.includes(t.id)).map(o=>o.id)])]
-    .filter(id=>!a.has(id));};
-
-/* ---------------- state ---------------- */
+/* ============================================================================ STATE */
+let TERMS=[], REF=null, byId=new Map(), bySlug=new Map();
+let akaIndex=new Map(), relIndex=new Map();     // reverse links, computed once
 let q='', tab='focusAreas', mode='all', expanded=null, showAll=false;
-const open=new Set();
+const openRows=new Set();
 const checked={focusAreas:new Set(), termTypes:new Set(), sources:new Set()};
 const totalChecked=()=>KINDS.reduce((n,k)=>n+checked[k.key].size,0);
 
-/* Match "all" means every ticked classification must be present on the term, so
-   each additional tick narrows the result. "any" is the looser reading - a term
-   qualifies if it carries at least one. Both span all three fields. */
+let results=[];          // current filtered list
+/* The rendered window is results[windowStart .. cursor). Anchoring at
+   windowStart is what makes the letter bar cheap: jumping to P renders 60 rows
+   starting at P rather than the 5,200 that precede it. */
+let windowStart=0, cursor=0;
+let facetCache=null;     // {key -> Map(value -> count)}, dropped on any filter change
+let observer=null;
+
+/* ============================================================================ LOAD */
+async function load(){
+  try{
+    const [g,r]=await Promise.all([
+      fetch(DATA_URL).then(res=>{ if(!res.ok) throw new Error(`${DATA_URL} — HTTP ${res.status}`); return res.json(); }),
+      fetch(REF_URL).then(res=>{ if(!res.ok) throw new Error(`${REF_URL} — HTTP ${res.status}`); return res.json(); })
+    ]);
+    TERMS=g.terms; REF=r;
+    byId=new Map(TERMS.map(t=>[t.id,t]));
+
+    // Slugs are the permalink key, so they must be unique. They are today, but
+    // if a future export introduces a collision, disambiguate rather than let
+    // one term silently shadow another.
+    for(const t of TERMS){
+      let s=slug(t.term);
+      if(bySlug.has(s)) s=`${s}-${t.id.slice(0,6)}`;
+      t._slug=s; bySlug.set(s,t);
+    }
+
+    // Reverse link maps, built once. The previous version scanned every term for
+    // every row rendered, which is fine at 25 terms and quadratic at 8,397.
+    for(const t of TERMS){
+      for(const id of t.aka){ if(!akaIndex.has(id)) akaIndex.set(id,new Set()); akaIndex.get(id).add(t.id); }
+      for(const id of t.related){ if(!relIndex.has(id)) relIndex.set(id,new Set()); relIndex.get(id).add(t.id); }
+    }
+
+    $('q').disabled=false;
+    $('alpha').hidden=false;
+    recompute();
+    renderRef(); renderBar();
+    openFromHash();
+  }catch(err){
+    showLoadError(err);
+  }
+}
+
+function showLoadError(err){
+  $('cnt').textContent='';
+  $('list').innerHTML=`<div class="loadfail">
+    <h2>The glossary data could not be loaded</h2>
+    <p>${esc(err.message||String(err))}</p>
+    <p>If you opened this file directly from disk, that is the cause — browsers block
+       <code>fetch()</code> on <code>file://</code> URLs. Serve the folder over HTTP instead:</p>
+    <p><code>python3 -m http.server 8000</code> then open <code>http://localhost:8000</code></p>
+  </div>`;
+}
+
+/* ============================================================================ FILTERING */
+const matchesQuery=t=>{
+  if(!q) return true;
+  const s=q.toLowerCase();
+  return t.term.toLowerCase().includes(s)||t.definition.toLowerCase().includes(s);
+};
 function matches(t){
-  if(q){const s=q.toLowerCase();
-    if(!(t.term.toLowerCase().includes(s)||t.definition.toLowerCase().includes(s))) return false;}
+  if(!matchesQuery(t)) return false;
   if(!totalChecked()) return true;
   const has=[];
-  KINDS.forEach(k=>{const vals=split(t[k.field]);
-    checked[k.key].forEach(v=>has.push(vals.includes(v)));});
+  for(const k of KINDS){
+    if(!checked[k.key].size) continue;
+    const vals=split(t[k.field]);
+    for(const v of checked[k.key]) has.push(vals.includes(v));
+  }
   return mode==='all' ? has.every(Boolean) : has.some(Boolean);
 }
-const hits=()=>TERMS.filter(matches);
-const hl=s=>{const x=String(s||''); if(!q) return esc(x);
+
+/* Recompute the result set and drop the caches that depend on it. Called on any
+   change to the query, the ticked filters, or the match mode. */
+function recompute(){
+  results=TERMS.filter(matches);
+  facetCache=null;
+  windowStart=0;
+  renderList();
+}
+
+/* In "match all" the base is the current result set, so an option's count is
+   exactly what you would get by ticking it. In "match any" ticking an option
+   widens rather than narrows, so the base is everything matching the search
+   box — counting against the current results would wrongly hide options. */
+function facetCounts(k){
+  if(!facetCache){
+    const base = mode==='all' ? results : TERMS.filter(matchesQuery);
+    facetCache={};
+    for(const kind of KINDS) facetCache[kind.key]=new Map();
+    for(const t of base){
+      for(const kind of KINDS){
+        const m=facetCache[kind.key];
+        for(const v of split(t[kind.field])) m.set(v,(m.get(v)||0)+1);
+      }
+    }
+  }
+  return facetCache[k.key];
+}
+
+/* ============================================================================ LINKS */
+const akaOf=t=>[...new Set([...t.aka, ...(akaIndex.get(t.id)||[])])].filter(id=>id!==t.id);
+const relOf=t=>{
+  const a=new Set(akaOf(t));
+  return [...new Set([...t.related, ...(relIndex.get(t.id)||[])])]
+    .filter(id=>id!==t.id && !a.has(id));
+};
+
+/* ============================================================================ LIST */
+const hl=s=>{const x=flat(s); if(!q) return esc(x);
   const i=x.toLowerCase().indexOf(q.toLowerCase()); if(i<0) return esc(x);
   return esc(x.slice(0,i))+'<mark>'+esc(x.slice(i,i+q.length))+'</mark>'+esc(x.slice(i+q.length));};
 
-/* ---------------- term list ---------------- */
+const bucketOf=t=>{const c=flat(t.term)[0]||'#'; return /[A-Za-z]/.test(c)?c.toUpperCase():'#';};
+
 function relCell(label,ids){
   return `<div><div class="blk-k">${label}</div><div class="relv">${
     ids.length ? ids.map(id=>byId.get(id)).filter(Boolean)
-        .map(t=>`<button class="tpill" data-go="${t.id}">${esc(t.term)}</button>`).join('')
+        .map(t=>`<button class="tpill" data-go="${esc(t._slug)}">${esc(flat(t.term))}</button>`).join('')
       : '<span class="none">None recorded.</span>'}</div></div>`;
 }
-function renderList(){
-  const list=hits();
-  $('cnt').textContent=`${list.length} of ${TERMS.length} terms`;
-  let out='',letter='';
-  list.forEach(t=>{
-    const L=t.term[0].toUpperCase();
-    if(L!==letter){letter=L; out+=`<div class="idx-letter">${esc(letter)}</div>`;}
-    const isOpen=open.has(t.id), aka=akaOf(t), rel=relOf(t);
-    const akaNames=aka.map(id=>byId.get(id)).filter(Boolean).map(x=>x.term);
-    out+=`<div class="idx-row ${isOpen?'open':''}" data-id="${t.id}">
-      <button class="idx-head" data-toggle="${t.id}">
-        <span class="idx-term">${hl(t.term)}</span>
-        ${akaNames.length&&!isOpen?`<span class="idx-aka">aka ${esc(akaNames.slice(0,2).join(', '))}${akaNames.length>2?` +${akaNames.length-2}`:''}</span>`:''}
-        <svg class="idx-chev" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg>
-      </button>
-      <div class="idx-body">
-        <p class="idx-def">${hl(t.definition)}</p>
-        <div class="cls3">${KINDS.map(k=>{
-          const vals=split(t[k.field]);
-          return `<div><div class="blk-k">${k.label}</div><div class="blk-v">${
-            vals.length ? vals.map(v=>`<button class="pill ${k.cls}" data-ref="${k.key}|${esc(v)}"
-                title="Show ${esc(v)} in the reference panel">${esc(v)}</button>`).join('')
-            : '<span class="none" style="font-size:12.5px;color:var(--ink-faint)">—</span>'}</div></div>`;
-        }).join('')}</div>
-        <div class="rel2">${relCell('Also known as',aka)}${relCell('Related terms',rel)}</div>
-        <div class="permal">Permalink <code>/business-glossary/${slug(t.term)}</code></div>
-      </div></div>`;
-  });
-  $('list').innerHTML=list.length?out:`<div class="empty">No terms match.<br>
-    ${totalChecked()>1&&mode==='all'?'Try “Match any”, or remove a filter.':'Try a different search or clear the filters.'}</div>`;
+
+/* Bodies are built on first expand, not up front. Most rows are never opened,
+   and the body is by far the larger half of a row's markup. */
+function buildBody(t){
+  const aka=akaOf(t), rel=relOf(t);
+  const url=location.origin+location.pathname+'#'+t._slug;
+  return `<p class="idx-def">${hl(t.definition)}</p>
+    <div class="cls3">${KINDS.map(k=>{
+      const vals=split(t[k.field]);
+      return `<div><div class="blk-k">${k.label}</div><div class="blk-v">${
+        vals.length ? vals.map(v=>`<button class="pill ${k.cls}" data-ref="${k.key}|${esc(v)}"
+            title="Show ${esc(v)} in the reference panel">${esc(v)}</button>`).join('')
+        : '<span style="font-size:12.5px;color:var(--ink-faint)">—</span>'}</div></div>`;
+    }).join('')}</div>
+    <div class="rel2">${relCell('Also known as',aka)}${relCell('Related terms',rel)}</div>
+    <div class="permal"><code>${esc(url)}</code>
+      <button class="copy" data-copy="${esc(url)}">Copy link</button></div>`;
 }
 
-/* ---------------- filter summary ---------------- */
+function rowHTML(t){
+  const isOpen=openRows.has(t.id);
+  const akaNames=akaOf(t).map(id=>byId.get(id)).filter(Boolean).map(x=>flat(x.term));
+  return `<div class="idx-row ${isOpen?'open':''}" data-id="${t.id}" data-slug="${esc(t._slug)}">
+    <button class="idx-head" data-toggle="${t.id}" aria-expanded="${isOpen}">
+      <span class="idx-term">${hl(t.term)}</span>
+      ${akaNames.length&&!isOpen?`<span class="idx-aka">aka ${esc(akaNames.slice(0,2).join(', '))}${akaNames.length>2?` +${akaNames.length-2}`:''}</span>`:''}
+      <svg class="idx-chev" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg>
+    </button>
+    <div class="idx-body">${isOpen?buildBody(t):''}</div>
+  </div>`;
+}
+
+function renderList(){
+  const total=TERMS.length;
+  $('cnt').textContent = results.length===total
+    ? `${total.toLocaleString()} terms`
+    : `${results.length.toLocaleString()} of ${total.toLocaleString()} terms`;
+
+  if(!results.length){
+    $('list').innerHTML=`<div class="empty">No terms match.<br>
+      ${totalChecked()>1&&mode==='all'?'Try “Match any”, or remove a filter.':'Try a different search or clear the filters.'}</div>`;
+    renderAlpha();
+    return;
+  }
+  // When the window is anchored partway down, say so and offer a way back —
+  // otherwise the earlier terms would simply appear to be missing.
+  $('list').innerHTML = windowStart>0
+    ? `<div class="more skipped">${windowStart.toLocaleString()} terms above ·
+        <button class="copy" id="fromStart">Back to the start</button></div>`
+    : '';
+  cursor=windowStart;
+  appendChunk();
+  renderAlpha();
+}
+
+function appendChunk(){
+  if(cursor>=results.length) return;
+  const list=$('list');
+  const end=Math.min(cursor+CHUNK, results.length);
+
+  let out='';
+  let prev = cursor>windowStart ? bucketOf(results[cursor-1]) : null;
+  for(let i=cursor;i<end;i++){
+    const t=results[i], b=bucketOf(t);
+    if(b!==prev){ out+=`<div class="idx-letter" data-letter="${esc(b)}">${esc(b)}</div>`; prev=b; }
+    out+=rowHTML(t);
+  }
+  const sentinel=list.querySelector('.more.below');
+  if(sentinel) sentinel.remove();
+  list.insertAdjacentHTML('beforeend',out);
+  cursor=end;
+
+  if(cursor<results.length){
+    list.insertAdjacentHTML('beforeend',
+      `<div class="more below">${(results.length-cursor).toLocaleString()} more…</div>`);
+    watchSentinel();
+  }
+}
+
+/* Chunks load on scroll rather than behind a button: an A–Z index is something
+   people scan, and a click between every 60 terms would interrupt that. */
+function watchSentinel(){
+  if(observer) observer.disconnect();
+  const el=$('list').querySelector('.more.below');
+  if(!el) return;
+  observer=new IntersectionObserver(entries=>{
+    if(entries.some(e=>e.isIntersecting)) appendChunk();
+  },{rootMargin:'400px'});
+  observer.observe(el);
+}
+
+/* Bring `index` into the DOM. If it is just below the rendered window, extend;
+   if it is far away, re-anchor the window there instead. Extending all the way
+   to term 5,200 would cost about a second and leave thousands of rows in the
+   document, which is exactly what chunking is meant to avoid. */
+const REACH = CHUNK*6;
+function focusIndex(index){
+  if(index>=windowStart && index<cursor) return;          // already rendered
+  if(index>=cursor && index-cursor<REACH){
+    while(cursor<=index && cursor<results.length) appendChunk();
+    return;
+  }
+  windowStart=index;
+  renderList();
+}
+
+/* ============================================================================ LETTER BAR */
+const LETTERS=['#',...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'];
+function renderAlpha(){
+  const present=new Set();
+  for(const t of results) present.add(bucketOf(t));
+  $('alpha').innerHTML=LETTERS.map(L=>
+    `<button data-letter="${L}" ${present.has(L)?'':'disabled'}
+      title="${present.has(L)?`Jump to ${L}`:`No terms under ${L}`}">${L}</button>`).join('');
+}
+function jumpTo(letter){
+  const i=results.findIndex(t=>bucketOf(t)===letter);
+  if(i<0) return;
+  windowStart=i;
+  renderList();
+  const el=$('list').querySelector(`.idx-letter[data-letter="${CSS.escape(letter)}"]`);
+  (el||$('list')).scrollIntoView({behavior:'smooth',block:'start'});
+}
+
+/* ============================================================================ PERMALINKS
+   Hash routing rather than real paths: it needs no server rewrite rule, so the
+   same file works on GitHub Pages, on S3 behind CloudFront, and from localhost.
+   A path-based scheme would need a rewrite configured separately on each. */
+function openTerm(key,{scroll=true}={}){
+  const t=bySlug.get(key)||byId.get(key);
+  if(!t) return false;
+
+  // A linked term may be filtered out of the current view. Clearing the filters
+  // is less confusing than a link that appears to do nothing.
+  if(!results.includes(t)){
+    q=''; $('q').value='';
+    KINDS.forEach(k=>checked[k.key].clear());
+    recompute(); renderBar(); renderRef();
+  }
+  openRows.add(t.id);
+  const i=results.indexOf(t);
+  if(i>=0) focusIndex(i);
+
+  const row=$('list').querySelector(`.idx-row[data-id="${CSS.escape(t.id)}"]`);
+  if(row){
+    const body=row.querySelector('.idx-body');
+    if(!body.innerHTML) body.innerHTML=buildBody(t);
+    row.classList.add('open');
+    row.querySelector('.idx-head').setAttribute('aria-expanded','true');
+    if(scroll){
+      row.scrollIntoView({behavior:'smooth',block:'center'});
+      row.classList.remove('target'); void row.offsetWidth; row.classList.add('target');
+    }
+  }
+  if(location.hash!=='#'+t._slug) history.replaceState(null,'','#'+t._slug);
+  return true;
+}
+function openFromHash(){
+  const h=decodeURIComponent(location.hash.replace(/^#/,''));
+  if(h) openTerm(h);
+}
+
+/* ============================================================================ FILTER BAR */
 function renderBar(){
   const n=totalChecked();
   $('fbar').classList.toggle('on',n>0);
@@ -327,11 +578,12 @@ function renderBar(){
   [...$('mode').children].forEach(b=>b.classList.toggle('on',b.dataset.mode===mode));
 }
 
-/* ---------------- reference panel ---------------- */
+/* ============================================================================ REFERENCE PANEL */
 function renderRef(){
+  if(!REF) return;
   $('tabs').innerHTML=KINDS.map(k=>{
     const n=checked[k.key].size;
-    const avail=[...facetCounts(k).values()].filter(v=>v>0).length;
+    let avail=0; for(const v of facetCounts(k).values()) if(v>0) avail++;
     return `<button class="ref-tab ${tab===k.key?'on':''}" data-tab="${k.key}">${k.plural}`
       +(n?`<span class="b">${n}</span>`:`<span class="a">${avail}</span>`)+`</button>`;
   }).join('');
@@ -342,17 +594,17 @@ function renderRef(){
   const shown=all.filter(([name])=>showAll||checked[tab].has(name)||(use.get(name)||0)>0);
   const hidden=all.length-shown.length;
 
-  $('refbody').innerHTML = (shown.length?shown:[]).map(([name,desc])=>{
+  $('refbody').innerHTML = shown.map(([name,desc])=>{
     const n=use.get(name)||0, on=checked[tab].has(name);
     return `<div class="ref-item ${on?'checked':''} ${expanded===name?'expanded':''} ${n?'':'zero'}" data-name="${esc(name)}">
       <div class="ref-top">
         <input type="checkbox" class="ref-cb" data-check="${esc(name)}" ${on?'checked':''} ${n||on?'':'disabled'}>
         <span class="swatch ${k.sw}"></span>
         <button class="ref-name" data-expand="${esc(name)}" title="Read what this means">${esc(name)}</button>
-        <span class="ref-n">${n||'0'}</span>
+        <span class="ref-n">${n.toLocaleString()}</span>
       </div>
       <div class="ref-desc">${desc==='__UNDOCUMENTED__'
-        ? `<span class="ref-undoc">Used on ${n} term(s) here, but not listed on MISMO's published Focus Area Descriptions page — no official description available.</span>`
+        ? `<span class="ref-undoc">Used on ${n.toLocaleString()} term(s) here, but not listed on MISMO's published Focus Area Descriptions page — no official description available.</span>`
         : esc(desc)}</div></div>`;
   }).join('') || `<div class="empty" style="padding:26px 16px;font-size:12.5px;">
       No ${k.plural.toLowerCase()} apply to the current results.</div>`;
@@ -363,39 +615,90 @@ function renderRef(){
   const sa=$('showall'); if(sa) sa.onclick=()=>{showAll=!showAll; renderRef();};
 }
 
-const renderAll=()=>{renderList(); renderBar(); renderRef();};
+/* ============================================================================ EVENTS */
+/* Debounced: at 8,397 terms an unthrottled keystroke handler filters and
+   re-renders faster than someone can type, and the field stutters. */
+let qt=null;
+$('q').addEventListener('input',e=>{
+  const v=e.target.value.trim();
+  clearTimeout(qt);
+  qt=setTimeout(()=>{ q=v; recompute(); renderRef(); },140);
+});
 
-/* ---------------- events ---------------- */
-$('q').addEventListener('input',e=>{q=e.target.value.trim(); renderAll();});
+$('alpha').addEventListener('click',e=>{
+  const b=e.target.closest('[data-letter]');
+  if(b&&!b.disabled) jumpTo(b.dataset.letter);
+});
+
+$('list').addEventListener('click',e=>{
+  if(e.target.id==='fromStart'){
+    windowStart=0; renderList();
+    $('list').scrollIntoView({behavior:'smooth',block:'start'});
+  }
+});
+
 $('tabs').addEventListener('click',e=>{const b=e.target.closest('[data-tab]');
   if(b){tab=b.dataset.tab; expanded=null; renderRef();}});
+
 $('refbody').addEventListener('click',e=>{
   const ex=e.target.closest('[data-expand]');
   if(ex){ expanded=expanded===ex.dataset.expand?null:ex.dataset.expand; renderRef(); return; }
   const cb=e.target.closest('[data-check]');
   if(cb){ const set=checked[tab];
-    cb.checked?set.add(cb.dataset.check):set.delete(cb.dataset.check); renderAll(); }
+    cb.checked?set.add(cb.dataset.check):set.delete(cb.dataset.check);
+    recompute(); renderBar(); renderRef(); }
 });
+
 $('mode').addEventListener('click',e=>{const b=e.target.closest('[data-mode]');
-  if(b){mode=b.dataset.mode; renderAll();}});
+  if(b){mode=b.dataset.mode; recompute(); renderBar(); renderRef();}});
+
 $('fchips').addEventListener('click',e=>{const b=e.target.closest('[data-un]');
-  if(b){const [k,v]=b.dataset.un.split('|'); checked[k].delete(v); renderAll();}});
-$('fclear').addEventListener('click',()=>{KINDS.forEach(k=>checked[k.key].clear()); renderAll();});
-$('list').addEventListener('click',e=>{
+  if(b){const [k,v]=b.dataset.un.split('|'); checked[k].delete(v);
+    recompute(); renderBar(); renderRef();}});
+
+$('fclear').addEventListener('click',()=>{
+  KINDS.forEach(k=>checked[k.key].clear()); recompute(); renderBar(); renderRef();});
+
+$('list').addEventListener('click',async e=>{
+  const cp=e.target.closest('[data-copy]');
+  if(cp){ e.stopPropagation();
+    try{ await navigator.clipboard.writeText(cp.dataset.copy); cp.textContent='Copied'; }
+    catch{ cp.textContent='Copy failed'; }
+    setTimeout(()=>{cp.textContent='Copy link';},1600); return; }
+
   const go=e.target.closest('[data-go]');
-  if(go){ e.stopPropagation(); open.add(go.dataset.go); renderList();
-    const el=$('list').querySelector(`[data-id="${go.dataset.go}"]`);
-    if(el) el.scrollIntoView({behavior:'smooth',block:'center'}); return; }
+  if(go){ e.stopPropagation(); openTerm(go.dataset.go); return; }
+
   const pill=e.target.closest('[data-ref]');
   if(pill){ e.stopPropagation(); const [k,v]=pill.dataset.ref.split('|');
     tab=k; expanded=v; renderRef();
     const el=$('refbody').querySelector(`[data-name="${CSS.escape(v)}"]`);
     if(el) el.scrollIntoView({behavior:'smooth',block:'center'}); return; }
+
+  // Expanding mutates one row rather than re-rendering the list, so scroll
+  // position and every other open row are left alone.
   const head=e.target.closest('[data-toggle]');
-  if(head){ const id=head.dataset.toggle; open.has(id)?open.delete(id):open.add(id); renderList(); }
+  if(head){
+    const id=head.dataset.toggle, row=head.closest('.idx-row'), t=byId.get(id);
+    if(!t) return;
+    if(openRows.has(id)){
+      openRows.delete(id); row.classList.remove('open');
+      head.setAttribute('aria-expanded','false');
+      if(location.hash==='#'+t._slug) history.replaceState(null,'',location.pathname+location.search);
+    }else{
+      openRows.add(id);
+      const body=row.querySelector('.idx-body');
+      if(!body.innerHTML) body.innerHTML=buildBody(t);
+      row.classList.add('open');
+      head.setAttribute('aria-expanded','true');
+      history.replaceState(null,'','#'+t._slug);
+    }
+  }
 });
 
-renderAll();
+window.addEventListener('hashchange',openFromHash);
+
+load();
 </script>
 </body>
 </html>

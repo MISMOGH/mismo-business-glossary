@@ -16,13 +16,10 @@ not share that project's data or design system.
 
 | Piece | State |
 | --- | --- |
-| Public page | Working, but still bound to a 25-term sample embedded in the HTML. Not yet reading `data/glossary.json`. |
+| Public page | Reads `data/glossary.json` and renders all 8,397 terms. Search, A–Z jump, faceted filtering, shareable permalinks. |
 | Console | Working. Carries the full 8,397-term baseline embedded in the file. |
 | Data files | Extracted and validated. `data/glossary.json` holds all 8,397 terms. |
-| Hosting | Not deployed. See `docs/deployment.md`. |
-
-The next substantive work item is wiring the public page to `data/glossary.json`.
-See "Known work items" below.
+| Hosting | Live on GitHub Pages. AWS not yet provisioned — see `docs/deployment.md`. |
 
 ## Layout
 
@@ -69,21 +66,45 @@ Before switching between local files, localhost and a hosted copy: use
 
 ## Known work items
 
-1. **Wire the public page to `data/glossary.json`.** It currently uses a 25-term
-   sample. At 8,397 terms the existing full-list `innerHTML` rebuild on every
-   keystroke will stall; the list needs virtualizing or capping until the user
-   searches.
-2. **Permalinks are decorative.** Each expanded term displays
-   `/business-glossary/<slug>`, but nothing serves those URLs. Needs either
-   hash-based routing or a CloudFront Function rewriting to the single page.
+1. **`Data Governance &amp; Management CoP (DGM)`** — an HTML entity in the source
+   data means this source does not match its own description, so those 11 terms
+   cannot be filtered by source at all. Fix in the console, then re-export. See
+   `docs/data-notes.md`.
+2. **Every term shows "None recorded" for AKA and Related.** The baseline export has
+   no column for them, so the fields are empty for all 8,397 terms. The relationship
+   display works; there is simply nothing to display yet. Populating it is console
+   work.
 3. **Decide whether the console is hosted at all.** It has no authentication and
    contains the entire glossary. See `docs/deployment.md`.
-4. **`Data Governance &amp; Management CoP (DGM)`** — an HTML entity in the source
-   data means this value does not match its own description. See `docs/data-notes.md`.
-5. **Term Type: single-value or multi-value?** Built as pipe-delimited multi-value to
+4. **Term Type: single-value or multi-value?** Built as pipe-delimited multi-value to
    match the other two fields, but MISMO's published Term Type page states every term
    gets one and only one. Currently no row in the data uses more than one, so a revert
    is cheap. Unresolved.
-6. **AKA and Related have no column in the upload format.** They travel in the full
+5. **AKA and Related have no column in the upload format.** They travel in the full
    export and the console backup, never in a change-set. Extending MISMO's upload
    schema to carry them is a change worth planning for.
+6. **Fonts load from Google Fonts.** If MISMO would rather not depend on a third-party
+   CDN, self-host Libre Franklin. The page already falls back to `system-ui` if the
+   request is blocked.
+
+## How the public page handles 8,397 terms
+
+Worth knowing before editing `index.html`, since several choices exist only because of
+scale:
+
+- **Rows render 60 at a time** as the reader scrolls. Building all 8,397 at once blocks
+  the main thread long enough to be felt on every keystroke.
+- **The rendered window is anchored.** Jumping to P renders 60 rows starting at P
+  rather than the 5,200 that precede it, and the list says how many are above with a
+  way back. Measured: an anchored jump is ~80ms; rendering through was ~1.6s.
+- **Term bodies are built on first expand**, not up front — most are never opened.
+- **Expanding mutates one row** instead of re-rendering the list, so scroll position
+  and other open rows survive.
+- **Reverse AKA/Related links are indexed once at load.** Computing them per row was
+  quadratic.
+- **Search is debounced 140ms.**
+- **Permalinks are hashes** (`#escrow-analysis`), not paths, so the same file works on
+  GitHub Pages, on S3 behind CloudFront, and from localhost with no rewrite rule
+  configured anywhere. Slugs keep parenthetical text, because dropping it collided
+  `Abatement (Rental)` with `Abatement (Tax)` — verified zero collisions across all
+  8,397 terms.
