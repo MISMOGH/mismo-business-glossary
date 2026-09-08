@@ -96,7 +96,12 @@ jobs:
           mkdir -p _site
           cp index.html _site/
           cp -r data _site/
-          # console/ is intentionally excluded.
+          # The console ships too. It has no write access of its own: publishing
+          # requires an access token the facilitator supplies, held in their own
+          # browser. Without one it is a read-only view of a glossary that is
+          # public anyway. It also has to be served over HTTP now, since it reads
+          # data/glossary.json and browsers block fetch() on file:// URLs.
+          cp -r console _site/
 
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
@@ -137,6 +142,12 @@ jobs:
       - name: Upload page
         run: |
           aws s3 cp index.html "s3://${{ vars.S3_BUCKET }}/index.html" \
+            --cache-control "no-cache"
+
+      - name: Upload console
+        run: |
+          aws s3 sync console/ "s3://${{ vars.S3_BUCKET }}/console/" \
+            --delete \
             --cache-control "no-cache"
 
       - name: Invalidate CloudFront
