@@ -1398,11 +1398,18 @@ async function repoSaveDraft(reason){
    release. The draft file is emptied in the same commit — the two must not
    disagree about what is published. */
 async function repoPublish(note){
+  /* Sorted before writing. Applied additions are appended to the working list,
+     so without this the file drifts out of alphabetical order — and a file that
+     is out of order produces misleading diffs as well as a misplaced term. */
+  const sorted=[...master].sort((a,b)=>
+    String(a.Term||'').replace(/\s+/g,' ').trim().toLowerCase()
+      .localeCompare(String(b.Term||'').replace(/\s+/g,' ').trim().toLowerCase(),
+                     'en',{numeric:true}));
   const out=JSON.stringify({
     meta:{version:new Date().toISOString().slice(0,10),
-          source:`console v${version}`, count:master.length,
+          source:`console v${version}`, count:sorted.length,
           note:'Published from the management console.'},
-    terms:master.map(r=>({id:r.ID,term:r.Term,definition:r.Definition,source:r.Source,
+    terms:sorted.map(r=>({id:r.ID,term:r.Term,definition:r.Definition,source:r.Source,
       termType:r.TermType,focusArea:r.FocusArea,
       aka:splitMulti(r.AKA),related:splitMulti(r.Related)}))
   },null,0).replace(/\},\{"id"/g,'},\n{"id"');   // one term per line, for readable diffs

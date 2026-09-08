@@ -303,6 +303,14 @@ async function load(){
       fetch(REF_URL,opts).then(res=>{ if(!res.ok) throw new Error(`${REF_URL} — HTTP ${res.status}`); return res.json(); })
     ]);
     TERMS=g.terms; REF=r;
+    /* Sorted here rather than trusted from the file. The console appends new
+       terms to the end of its list, so a freshly added term would otherwise
+       render after the Zs under a stray heading — which is exactly where the
+       first one went. The page groups by letter, so order is not cosmetic. */
+    /* Plain alphabetical, not numeric collation: "203K" is a programme name,
+       not a quantity, and numeric ordering pushes it ahead of "2004". */
+    TERMS.sort((a,b)=>flat(a.term).toLowerCase()
+      .localeCompare(flat(b.term).toLowerCase(),'en'));
     byId=new Map(TERMS.map(t=>[t.id,t]));
 
     // Slugs are the permalink key, so they must be unique. They are today, but
