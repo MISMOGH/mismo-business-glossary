@@ -506,7 +506,7 @@ let staged={};          // key -> {action,data,origin}
 let issues=[];
 let resolved={};        // issue id -> 'skipped'. Deliberate suppressions only.
 let fixCount=0;         // approved corrections, counted separately
-let page=1; const PAGE_SIZE=50;
+let page=1; const PAGE_SIZE=10;
 let editingKey=null,newCounter=1,vTab='FocusArea',issueFilter='';
 let selected=new Set();   // __key values; deliberately survives paging and filtering
 
