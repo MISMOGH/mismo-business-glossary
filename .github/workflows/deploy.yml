@@ -1,0 +1,146 @@
+name: Deploy
+
+# Publishes the public glossary page.
+#
+# Today this targets GitHub Pages. The `deploy-s3` job below is the AWS
+# equivalent and is disabled until the AWS resources exist -- see
+# docs/deployment.md for what needs provisioning. When AWS is ready, set
+# DEPLOY_TARGET to "aws" in the repository variables. Nothing else changes.
+#
+# The console (console/) is deliberately NOT deployed. It is an unauthenticated
+# editing tool containing the whole glossary. See docs/deployment.md.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------- validate
+  # Cheap guardrail: a malformed data file should fail here rather than
+  # silently ship a page that renders nothing.
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate data files
+        run: |
+          python3 - <<'PY'
+          import json, sys
+
+          g = json.load(open('data/glossary.json', encoding='utf-8'))
+          r = json.load(open('data/reference.json', encoding='utf-8'))
+
+          terms = g['terms']
+          ids = [t['id'] for t in terms]
+          problems = []
+
+          if len(ids) != len(set(ids)):
+              problems.append('duplicate term IDs')
+          if g['meta']['count'] != len(terms):
+              problems.append(
+                  f"meta.count ({g['meta']['count']}) != actual ({len(terms)})")
+
+          # Every aka/related link must point at a term that exists.
+          known = set(ids)
+          for t in terms:
+              for field in ('aka', 'related'):
+                  for ref in t[field]:
+                      if ref not in known:
+                          problems.append(f"{t['term']}: dangling {field} -> {ref}")
+
+          for field, key in (('focusArea', 'focusAreas'),
+                             ('termType', 'termTypes'),
+                             ('source', 'sources')):
+              used = {v.strip() for t in terms
+                      for v in t[field].split('|') if v.strip()}
+              missing = sorted(used - set(r[key]))
+              if missing:
+                  # A warning, not a failure: the DGM entity mismatch is a known
+                  # open defect and should not block deploying the rest.
+                  print(f"::warning::{field} values with no description: {missing}")
+
+          if problems:
+              for p in problems[:20]:
+                  print(f"::error::{p}")
+              sys.exit(1)
+
+          print(f"OK - {len(terms)} terms, all links resolve")
+          PY
+
+  # ------------------------------------------------------------ GitHub Pages
+  deploy-pages:
+    needs: validate
+    if: vars.DEPLOY_TARGET != 'aws'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Stage site files
+        run: |
+          mkdir -p _site
+          cp index.html _site/
+          cp -r data _site/
+          # console/ is intentionally excluded.
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4
+
+  # -------------------------------------------------------- AWS S3 + CloudFront
+  # Enable by setting repository variable DEPLOY_TARGET=aws, plus:
+  #   vars.AWS_ROLE_ARN         IAM role trusting this repo via OIDC
+  #   vars.AWS_REGION           region of the bucket
+  #   vars.S3_BUCKET            target bucket name
+  #   vars.CLOUDFRONT_ID        distribution ID, for invalidation
+  deploy-s3:
+    needs: validate
+    if: vars.DEPLOY_TARGET == 'aws'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write        # required for OIDC; no stored access key
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      # Data files are large and change rarely -> cache hard.
+      - name: Upload data
+        run: |
+          aws s3 sync data/ "s3://${{ vars.S3_BUCKET }}/data/" \
+            --delete \
+            --cache-control "public,max-age=86400"
+
+      # index.html must never be stale, or it points at data that moved.
+      - name: Upload page
+        run: |
+          aws s3 cp index.html "s3://${{ vars.S3_BUCKET }}/index.html" \
+            --cache-control "no-cache"
+
+      - name: Invalidate CloudFront
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id "${{ vars.CLOUDFRONT_ID }}" \
+            --paths "/*"
