@@ -673,18 +673,52 @@ function renderIssueRow(i){
                   :`<span class="manual">manual</span><button class="btn sm" data-edit2="${esc(i.rowId)}">Edit</button><button class="btn sm" data-skip="${esc(i.id)}">Skip</button>`}
     </div></div>`;
 }
+/* Correcting a governed field has to correct the vocabulary with it. Term type,
+   focus area and source are validated against controlled lists, so fixing an
+   entity or a stray space on the term alone leaves the list holding the broken
+   spelling — the corrected term is then reported as being outside the very
+   vocabulary the correction was meant to satisfy. Fixing the data must not
+   break its own validation. */
+function syncVocabFix(field,before,after){
+  const f=vfield(field); if(!f) return 0;
+  const wasVals=cellValues({[field]:before},f), nowVals=cellValues({[field]:after},f);
+  let n=0;
+  wasVals.forEach((w,idx)=>{
+    const a=nowVals[idx];
+    if(!a||a===w) return;
+    const at=vocab[field].indexOf(w);
+    if(at===-1) return;
+    // If the corrected spelling already exists, the broken one is simply
+    // retired rather than duplicated.
+    vocab[field] = vocab[field].includes(a)
+      ? vocab[field].filter(v=>v!==w)
+      : vocab[field].map(v=>v===w?a:v);
+    vocab[field]=[...new Set(vocab[field])].sort();
+    n++;
+  });
+  return n;
+}
+
 async function applyFix(id){
   const i=issues.find(x=>x.id===id); if(!i||!i.fixable) return;
   const row=master.find(r=>r.ID===i.rowId)||master[i.rowIndex]; if(!row) return;
+  const before=row[i.field];
   row[i.field]=i.after; fixCount++; delete resolved[i.id];
+  syncVocabFix(i.field,before,i.after);
   await persist(); renderIssues(); renderAll();
 }
 async function applyAll(type){
   const list=detectIssues().filter(i=>i.type===type&&i.fixable&&!resolved[i.id]);
   if(!list.length) return;
-  if(!confirm(`Approve all ${list.length} "${issueMeta(type).title}" corrections?\n\nThey are the same class of change. "Revert to baseline" undoes everything if needed.`)) return;
+  const governed=list.some(i=>vfield(i.field));
+  if(!confirm(`Approve all ${list.length} "${issueMeta(type).title}" corrections?\n\n`
+    +`They are the same class of change.`
+    +(governed?`\n\nSome affect a classification, so the governed list is corrected to match.`:'')
+    +`\n\n"Revert to shipped baseline" undoes everything if needed.`)) return;
   list.forEach(i=>{const row=master.find(r=>r.ID===i.rowId)||master[i.rowIndex];
-    if(row){row[i.field]=i.after; fixCount++; delete resolved[i.id];}});
+    if(row){ const before=row[i.field];
+      row[i.field]=i.after; fixCount++; delete resolved[i.id];
+      syncVocabFix(i.field,before,i.after); }});
   await persist(); renderIssues(); renderAll();
 }
 async function skipIssue(id){ if(resolved[id]==='skipped') delete resolved[id]; else resolved[id]='skipped';
@@ -1114,7 +1148,9 @@ async function publishVersion(){
   baseline=master.map(r=>({...r}));   // the draft becomes the new published state
   touched={}; version++;
   lastAutoSave=new Date().toISOString();
+  lastSavedVocab=JSON.stringify(vocab);
   await idbSet('lastAutoSave',lastAutoSave);
+  await idbSet('lastSavedVocab',lastSavedVocab);
   await persist(); renderAll();
   alert(sha
     ? `Version ${version-1} published.\n\nCommitted as ${sha.slice(0,8)}. The public site rebuilds itself in a minute or two.\n\nA change-set CSV has also downloaded, as a record of what changed.`
@@ -1218,7 +1254,7 @@ const DRAFT_PATH='.console/draft.json';
 const AUTOSAVE_AFTER=60*60*1000;
 let repo=null;                            // {full, branch, token}
 let editor=null;                          // who is making the changes, for attribution
-let lastAutoSave=null, repoState=null;    // repoState: {ok, login, error, lastCommit}
+let lastAutoSave=null, lastSavedVocab=null, repoState=null;    // repoState: {ok, login, error, lastCommit}
 
 const ghHeaders=extra=>({Authorization:`Bearer ${repo.token}`,
   'X-GitHub-Api-Version':'2022-11-28', ...extra});
@@ -1346,23 +1382,33 @@ async function repoLoad(){
     if(!vocab?.TermType?.length) seedVocab();
   }
   if(!vocab?.TermType?.length) seedVocab();
+  lastSavedVocab=JSON.stringify(vocab);
   await idbSet('lastAutoSave',lastAutoSave);
+  await idbSet('lastSavedVocab',lastSavedVocab);
   await persist(); renderAll();
   return {terms:master.length, draft:!!draftText};
 }
 
 async function repoSaveDraft(reason){
   const d=draftDiff();
-  if(!d.total && !Object.keys(staged).length) return null;
+  /* The vocabulary is part of the draft, and it can change on its own — renaming
+     a source touches no term if the terms already carry the corrected spelling.
+     Guarding on term differences alone meant that kind of edit was never saved,
+     so a facilitator could correct a governed list and lose it. */
+  const vocabChanged=JSON.stringify(vocab)!==(lastSavedVocab||'');
+  if(!d.total && !Object.keys(staged).length && !vocabChanged) return null;
+  const parts=[`${d.added.length} added`,`${d.edited.length} edited`,`${d.removed.length} removed`];
+  if(vocabChanged && !d.total) parts.push('classifications updated');
   // The token belongs to the account, not the person, so every commit would
   // otherwise read the same name however many facilitators come and go. The
   // editor's name is what makes "who changed this" survive a handover.
   const who=editor?` [${editor}]`:'';
-  const msg=`Save working draft (${d.added.length} added, ${d.edited.length} edited, `
-    +`${d.removed.length} removed)${reason?` — ${reason}`:''}${who}`;
+  const msg=`Save working draft (${parts.join(', ')})${reason?` — ${reason}`:''}${who}`;
   const sha=await ghCommit([{path:DRAFT_PATH,content:buildDraftFile()}],msg);
   lastAutoSave=new Date().toISOString();
+  lastSavedVocab=JSON.stringify(vocab);
   await idbSet('lastAutoSave',lastAutoSave);
+  await idbSet('lastSavedVocab',lastSavedVocab);
   renderRail();
   return sha;
 }
@@ -1401,7 +1447,8 @@ async function repoPublish(note){
 async function maybeAutoSave(){
   if(!repo||!repoState?.ok) return;
   const d=draftDiff();
-  if(!d.total && !Object.keys(staged).length) return;
+  const vocabChanged=JSON.stringify(vocab)!==(lastSavedVocab||'');
+  if(!d.total && !Object.keys(staged).length && !vocabChanged) return;
   if(lastAutoSave && Date.now()-new Date(lastAutoSave) < AUTOSAVE_AFTER) return;
   try{ await repoSaveDraft('daily save'); }
   catch(e){ console.warn('Autosave failed:',e); repoState.error=e.message; renderRail(); }
@@ -1895,6 +1942,7 @@ async function bootstrap(force){
         repo=(await idbGet('repo'))||null;
         editor=(await idbGet('editor'))||null;
         lastAutoSave=(await idbGet('lastAutoSave'))||null;
+        lastSavedVocab=(await idbGet('lastSavedVocab'))||null;
         if(!vocab?.TermType?.length) seedVocab();
         renderAll();
         if(repo) verifyRepo();
