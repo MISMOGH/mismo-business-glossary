@@ -188,7 +188,36 @@
   .selcell input{cursor:pointer; margin:0;}
   th.selcell{width:34px;}
 
-  .empty{text-align:center; padding:44px 20px; color:var(--ink-soft); font-size:13.5px;}
+  /* ---- shell: persistent status rail beside the work ----
+     The rail is sticky so the draft count, issue count and connection state stay
+     visible while scrolling a long term list. In the previous stacked layout you
+     scrolled past all of it and then could not see any of it while working. */
+  .shell{display:grid; grid-template-columns:270px 1fr; gap:18px; align-items:start;}
+  @media (max-width:1080px){ .shell{grid-template-columns:1fr;} .rail{position:static !important;} }
+  .rail{background:var(--card); border:1px solid var(--line); border-radius:var(--radius);
+        box-shadow:var(--shadow); overflow:hidden; position:sticky; top:16px;}
+  .rsec{padding:13px 15px; border-bottom:1px solid var(--line);}
+  .rsec:last-child{border-bottom:none;}
+  .rk{font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.06em;
+      color:var(--ink-soft); margin-bottom:9px; display:flex; align-items:center; gap:7px;}
+  .rk .sp{margin-left:auto; font-weight:600; text-transform:none; letter-spacing:0; font-size:11px;}
+  .rline{display:flex; justify-content:space-between; align-items:baseline; font-size:13px; padding:3px 0;}
+  .rline .v{font-weight:700; font-variant-numeric:tabular-nums;}
+  .rline button{background:none; border:none; padding:0; font-family:inherit; font-size:13px;
+                color:var(--brand); cursor:pointer; text-align:left;}
+  .rline button:hover{text-decoration:underline;}
+  .rstate{display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--ink-soft); line-height:1.5;}
+  .dot{width:8px; height:8px; border-radius:50%; flex:0 0 auto;}
+  .dot.g{background:var(--add);} .dot.a{background:var(--upd);} .dot.r{background:var(--rem);}
+  .rbtns{display:flex; flex-direction:column; gap:7px; margin-top:10px;}
+  .rbtns .btn{width:100%;}
+  .rcta{background:var(--upd-soft); border-bottom:1px solid #F0DCB4; padding:13px 15px;}
+  .rcta .t{font-size:13px; font-weight:700; color:var(--upd-text); margin-bottom:4px;}
+  .rcta .d{font-size:12px; color:#7A4708; line-height:1.5; margin-bottom:10px;}
+  .card-head{display:flex; align-items:center; gap:12px; margin-bottom:12px;}
+  .card-head h2{margin:0;}
+  .card-head .btn{margin-left:auto;}
+
   .hidden{display:none !important;}
   .val-row{display:flex; gap:10px; align-items:flex-start; padding:9px 0; border-bottom:1px solid var(--line); font-size:12.5px;}
   .val-row:last-child{border-bottom:none;}
@@ -201,10 +230,9 @@
   <div class="mast-in">
     <span class="brand">MISMO</span>
     <div><h1>Business Glossary — Management Console</h1>
-      <div class="sub">Master list · change-set import · export</div></div>
+      <div class="sub">Edit the glossary, review changes, publish a version</div></div>
     <div class="mast-right">
       <span class="count" id="dbStatus">Loading…</span>
-      <button class="btn sm" id="btnRevert">Revert to baseline</button>
     </div>
   </div>
 </div>
@@ -212,110 +240,94 @@
 <div class="wrap">
   <div id="boot" class="card"><div class="loading">Loading master glossary…</div></div>
 
-  <div class="card hidden" id="masterCard">
-    <h2>Master list</h2>
-    <p class="hint">The baseline glossary ships with this console and is the working record. Imports apply changes <em>to</em> it rather than replacing it.</p>
-    <div class="stats" id="masterStats"></div>
-    <div id="masterBanner"></div>
-  </div>
+  <div class="shell hidden" id="shell">
+    <aside class="rail" id="rail"></aside>
+    <input type="file" id="restoreFile" accept=".json" class="hidden">
 
-  <div class="card hidden" id="draftCard">
-    <h2>Draft changes</h2>
-    <p class="hint">Edits accumulate here between releases. What gets published is the difference between the draft and the last published version, so repeated edits to one term collapse into a single change.</p>
-    <div class="stats" id="draftStats"></div>
-    <div id="draftBanner"></div>
-    <div style="display:flex; gap:9px; flex-wrap:wrap; align-items:center; margin-top:14px;
-                padding-top:14px; border-top:1px solid var(--line);">
-      <button class="btn" id="btnBackup">Download backup</button>
-      <input type="file" id="restoreFile" accept=".json" class="hidden">
-      <button class="btn" id="btnRestore">Restore from backup…</button>
-      <span class="count" id="backupNote"></span>
-    </div>
-  </div>
+    <main>
+      <div class="card" id="browseCard">
+        <div class="card-head">
+          <h2>Browse &amp; edit</h2>
+          <button class="btn primary" id="btnNew">+ New term</button>
+        </div>
+        <div class="toolbar">
+          <input type="search" class="search" id="q" placeholder="Search term, definition or ID…">
+          <select id="fType"><option value="">All term types</option></select>
+          <select id="fArea"><option value="">All focus areas</option></select>
+          <select id="fSrc"><option value="">All sources</option></select>
+          <select id="fStaged"><option value="">All rows</option><option value="staged">Staged only</option>
+            <option value="add">Additions</option><option value="update">Updates</option><option value="remove">Removals</option></select>
+          <button class="btn" id="btnClear">Clear</button>
+        </div>
+        <div class="count" id="resultCount" style="margin-bottom:10px;"></div>
+        <div id="bulkBar"></div>
+        <div class="tbl-wrap"><table>
+          <thead><tr><th class="selcell"><input type="checkbox" id="selPage" title="Select everything on this page"></th>
+            <th style="width:210px;">Term</th><th>Definition</th><th style="width:105px;">Type</th>
+            <th style="width:185px;">Focus area</th><th style="width:155px;">Source</th><th style="width:150px;">Status</th></tr></thead>
+          <tbody id="tbody"></tbody></table></div>
+        <div class="pager" id="pager"></div>
+      </div>
 
-  <div class="card hidden" id="repoCard">
-    <h2>Repository</h2>
-    <p class="hint">The glossary lives in a GitHub repository. Publishing writes the new version there and the public site rebuilds itself. The working draft is saved there too, once a day, so months of edits are never held in this browser alone.</p>
-    <div class="stats" id="repoStats"></div>
-    <div id="repoBanner"></div>
-    <div style="display:flex; gap:9px; flex-wrap:wrap; align-items:center; margin-top:14px;
-                padding-top:14px; border-top:1px solid var(--line);">
-      <button class="btn" id="btnRepoConnect">Connect…</button>
-      <button class="btn" id="btnRepoSave">Save draft now</button>
-      <button class="btn" id="btnRepoLoad">Load from repository</button>
-      <span class="count" id="repoNote"></span>
-    </div>
-  </div>
-
-  <div class="card hidden" id="releaseCard">
-    <h2>Version history</h2>
-    <p class="hint">Published releases. Each change-set is kept so it can be downloaded again.</p>
-    <div class="vlist" id="releaseList"></div>
-    <div class="vadd" style="margin-top:12px;">
-      <input type="file" id="resyncFile" accept=".csv,.json" style="flex:1;">
-      <button class="btn" id="btnResync">Load official export as new baseline</button>
-    </div>
-    <p class="hint" style="margin:10px 0 0;">After the glossary system processes an upload it assigns real IDs to new terms. Re-syncing from the official export replaces both the draft and the baseline so local IDs cannot drift.</p>
-  </div>
-
-  <div class="card hidden" id="importCard">
-    <h2>Import change-set</h2>
-    <p class="hint">A change-set is a CSV of <strong>add</strong>, <strong>update</strong> and <strong>remove</strong> rows with the <code>Action</code> column filled. Rows are checked against the master list and the vocabulary, then staged for review — nothing is applied on import.</p>
-    <div class="drop" id="drop">
-      <p>Drop a change-set CSV here, or</p>
-      <input type="file" id="file" accept=".csv,text/csv" class="hidden">
-      <button class="btn primary" id="btnPick">Choose file…</button>
-    </div>
-    <div id="importSummary"></div>
-  </div>
-
-  <div class="card hidden" id="browseCard">
-    <h2>Browse &amp; edit</h2>
-    <p class="hint">Manual edits stage alongside imported ones. Nothing alters the master until applied.</p>
-    <div class="toolbar">
-      <input type="search" class="search" id="q" placeholder="Search term, definition or ID…">
-      <select id="fType"><option value="">All term types</option></select>
-      <select id="fArea"><option value="">All focus areas</option></select>
-      <select id="fSrc"><option value="">All sources</option></select>
-      <select id="fStaged"><option value="">All rows</option><option value="staged">Staged only</option>
-        <option value="add">Additions</option><option value="update">Updates</option><option value="remove">Removals</option></select>
-      <button class="btn" id="btnClear">Clear</button>
-      <button class="btn primary" id="btnNew">+ New term</button>
-    </div>
-    <div class="count" id="resultCount" style="margin-bottom:10px;"></div>
-    <div id="bulkBar"></div>
-    <div class="tbl-wrap"><table>
-      <thead><tr><th class="selcell"><input type="checkbox" id="selPage" title="Select everything on this page"></th>
-        <th style="width:210px;">Term</th><th>Definition</th><th style="width:105px;">Type</th>
-        <th style="width:185px;">Focus area</th><th style="width:155px;">Source</th><th style="width:150px;">Status</th></tr></thead>
-      <tbody id="tbody"></tbody></table></div>
-    <div class="pager" id="pager"></div>
-  </div>
-
-  <div class="card hidden" id="vocabCard">
-    <h2>Vocabulary</h2>
-    <p class="hint">Controlled lists that values are checked against. Matching is exact, apart from surrounding whitespace.</p>
-    <div class="vtabs" id="vtabs"></div>
-    <div class="vlist" id="vlist"></div>
-    <div class="vadd"><input type="text" id="vNew" placeholder="Add a new value…">
-      <button class="btn primary" id="vAdd">Add</button></div>
-    <p class="hint" style="margin:10px 0 0;" id="vHint"></p>
-  </div>
-
-  <div class="card hidden" id="exportCard">
-    <h2>Export &amp; apply</h2>
-    <p class="hint">The change-set contains only staged rows, in upload column order, with <code>Action</code> populated.</p>
-    <div class="stats" id="changeStats" style="margin-bottom:14px;"></div>
-    <div id="validation"></div>
-    <div style="display:flex; gap:9px; flex-wrap:wrap; margin-top:14px;">
-      <button class="btn primary" id="btnExportChanges">Export change-set CSV</button>
-      <button class="btn ok" id="btnApply">Apply staged to master</button>
-      <button class="btn" id="btnExportFull">Export full master</button>
-      <button class="btn danger" id="btnDiscard">Discard staged</button>
-    </div>
+      <div class="card hidden" id="exportCard">
+        <div class="card-head"><h2>Staged changes</h2></div>
+        <p class="hint">Staged edits are not in the draft yet. Apply them to the draft, or export them as a change-set CSV.</p>
+        <div class="stats" id="changeStats" style="margin-bottom:14px;"></div>
+        <div id="validation"></div>
+        <div style="display:flex; gap:9px; flex-wrap:wrap; margin-top:14px;">
+          <button class="btn ok" id="btnApply">Apply staged to draft</button>
+          <button class="btn" id="btnExportChanges">Export change-set CSV</button>
+          <button class="btn" id="btnExportFull">Export full glossary</button>
+          <button class="btn danger" id="btnDiscard">Discard staged</button>
+        </div>
+      </div>
+    </main>
   </div>
 </div>
 
+<div class="modal-bg" id="vocabBg"><div class="modal wide">
+  <h2>Classifications</h2>
+  <p class="hint">Term types, focus areas and sources are governed lists. Values on terms are checked
+     against them exactly, apart from surrounding whitespace. Renaming a value rewrites it on every
+     term that uses it.</p>
+  <div class="vtabs" id="vtabs"></div>
+  <div class="vlist" id="vlist"></div>
+  <div class="vadd"><input type="text" id="vNew" placeholder="Add a new value…">
+    <button class="btn primary" id="vAdd">Add</button></div>
+  <p class="hint" style="margin:10px 0 0;" id="vHint"></p>
+  <div class="modal-foot"><button class="btn" id="vClose">Close</button></div>
+</div></div>
+
+<div class="modal-bg" id="importBg"><div class="modal">
+  <h2>Import a change-set</h2>
+  <p class="hint">A change-set is a CSV of <strong>add</strong>, <strong>update</strong> and
+     <strong>remove</strong> rows with the <code>Action</code> column filled. Rows are checked against
+     the glossary and the classifications, then staged for review — nothing is applied on import.</p>
+  <div class="drop" id="drop">
+    <p>Drop a change-set CSV here, or</p>
+    <input type="file" id="file" accept=".csv,text/csv" class="hidden">
+    <button class="btn primary" id="btnPick">Choose file…</button>
+  </div>
+  <div id="importSummary"></div>
+  <div class="modal-foot"><button class="btn" id="importClose">Close</button></div>
+</div></div>
+
+<div class="modal-bg" id="verBg"><div class="modal wide">
+  <h2>Versions</h2>
+  <p class="hint">Published versions. Each change-set is kept so it can be downloaded again.</p>
+  <div class="vlist" id="releaseList"></div>
+  <div class="vadd" style="margin-top:12px;">
+    <input type="file" id="resyncFile" accept=".csv,.json" style="flex:1;">
+    <button class="btn" id="btnResync">Load an official export as the new baseline</button>
+  </div>
+  <p class="hint" style="margin:10px 0 0;">Use this only if the glossary is being reconciled against a
+     file produced elsewhere. It replaces both the draft and the published baseline.</p>
+  <div class="modal-foot">
+    <button class="btn danger" id="btnRevert">Revert to shipped baseline</button>
+    <div style="flex:1;"></div>
+    <button class="btn" id="verClose">Close</button>
+  </div>
+</div></div>
 <div class="modal-bg" id="issueBg"><div class="modal wide">
   <h2>Review issues</h2>
   <p class="hint" id="issueSub"></p>
@@ -791,11 +803,13 @@ function renderImportSummary(rows){
       if(r._a==='add'){ data.ID=''; staged['new:'+(newCounter++)]={action:'add',data,origin:'import'}; }
       else staged[r.ID]={action:r._a,data,origin:'import'};
     });
-    await persist(); $('importSummary').innerHTML=''; $('file').value=''; renderAll();
+    await persist(); $('importSummary').innerHTML=''; $('file').value='';
+    $('importBg').classList.remove('open'); renderAll();
     $('exportCard').scrollIntoView({behavior:'smooth'});
   };
   const cb=$('btnCancelImport');
-  if(cb) cb.onclick=()=>{ $('importSummary').innerHTML=''; $('file').value=''; };
+  if(cb) cb.onclick=()=>{ $('importSummary').innerHTML=''; $('file').value='';
+    $('importBg').classList.remove('open'); };
 }
 
 /* ============================================================================ BROWSE */
@@ -1061,7 +1075,7 @@ async function revertChange(id,kind){
     if(b&&i>-1) master[i]={...b}; }
   else if(kind==='removed'){ const b=baseline.find(r=>r.ID===id); if(b) master.push({...b}); }
   delete touched[id];
-  await persist(); renderDraft(); renderAll();
+  await persist(); renderAll();
 }
 
 async function publishVersion(){
@@ -1101,7 +1115,7 @@ async function publishVersion(){
   touched={}; version++;
   lastAutoSave=new Date().toISOString();
   await idbSet('lastAutoSave',lastAutoSave);
-  await persist(); renderDraft(); renderAll();
+  await persist(); renderAll();
   alert(sha
     ? `Version ${version-1} published.\n\nCommitted as ${sha.slice(0,8)}. The public site rebuilds itself in a minute or two.\n\nA change-set CSV has also downloaded, as a record of what changed.`
     : `Version ${version-1} published.\n\nThe change-set CSV has downloaded — upload it to the glossary system.\n\nImportant: additions were sent without an ID, so the glossary system assigns the real ones. Once it has processed the upload, use "Load official export" to re-sync, otherwise the locally generated IDs for those new terms will not match.`);
@@ -1133,47 +1147,6 @@ function renderDraftModal(){
     : `<div class="empty">No changes since the last published version.</div>`;
 }
 
-function renderDraft(){
-  const d=draftDiff();
-  $('draftStats').innerHTML=[['Added',d.added.length,'var(--add-text)'],['Edited',d.edited.length,'var(--upd-text)'],
-    ['Removed',d.removed.length,'var(--rem-text)'],['Total',d.total,'var(--ink)'],
-    ['Next version',version,'var(--brand-text)']]
-    .map(([l,v,c])=>`<div class="stat"><div class="stat-n" style="color:${c}">${typeof v==='number'?v.toLocaleString():v}</div><div class="stat-l">${l}</div></div>`).join('');
-  const last=releases[0];
-  $('draftBanner').innerHTML = d.total ? `
-    <div class="banner"><div><div class="banner-t">${d.total.toLocaleString()} change(s) ready for version ${version}</div>
-      <div class="banner-d">${last?`Last published: v${last.version} on ${new Date(last.publishedAt).toLocaleDateString()}.`:'Nothing published from this console yet.'}
-      Publishing downloads the change-set and snapshots the draft as the new published state.</div></div>
-      <div class="banner-acts" style="display:flex;gap:8px;">
-        <button class="btn" id="btnViewDraft">Review changes</button>
-        <button class="btn ok" id="btnPublish">Publish version ${version}</button></div></div>`
-    : `<div class="banner clean"><div><div class="banner-t">No changes since the last published version</div>
-      <div class="banner-d">${last?`Version ${last.version} published ${new Date(last.publishedAt).toLocaleDateString()}.`:'The draft matches the baseline.'}</div></div>
-      <div class="banner-acts"><button class="btn" id="btnViewDraft">Review changes</button></div></div>`;
-  $('btnViewDraft').onclick=openDraft;
-  if($('btnPublish')) $('btnPublish').onclick=publishVersion;
-
-  const d2=draftDiff();
-  const note=$('backupNote');
-  if(!lastBackupAt){
-    note.innerHTML=d2.total
-      ? `<span style="color:var(--upd-text);font-weight:600;">Never backed up — ${d2.total.toLocaleString()} unsaved draft change(s).</span>`
-      : `Captures the draft, staged edits, vocabulary and release history in one file.`;
-  } else {
-    const age=Math.floor((Date.now()-new Date(lastBackupAt))/86400000);
-    note.innerHTML=`Last backup ${new Date(lastBackupAt).toLocaleString()}`
-      + (age>=7?` <span style="color:var(--upd-text);font-weight:600;">· ${age} days ago</span>`:'');
-  }
-
-  $('releaseList').innerHTML = releases.length ? releases.map(r=>`
-    <div class="vrow"><span class="vval">Version ${r.version}
-      <span style="font-weight:400;color:var(--ink-soft);"> · ${new Date(r.publishedAt).toLocaleString()}</span>
-      ${r.note?`<div style="font-weight:400;font-size:12px;color:var(--ink-soft);margin-top:2px;">${esc(r.note)}</div>`:''}</span>
-      <span class="vuse">${r.counts.added}+ / ${r.counts.edited}~ / ${r.counts.removed}−</span>
-      <button class="btn sm" data-redl="${r.version}">Download CSV</button></div>`).join('')
-    : `<div class="empty">No versions published from this console yet.</div>`;
-}
-
 /* ============================================================================ BACKUP
    All console state lives in this browser's IndexedDB. Clearing site data, a
    different machine or a different browser all lose it - and a draft can
@@ -1188,7 +1161,7 @@ async function exportBackup(){
              draftChanges:d.total, nextVersion:version, releases:releases.length},
     state:{master,baseline,vocab,staged,resolved,touched,releases,version,fixCount,newCounter}
   };
-  lastBackupAt=payload.savedAt; await persist(); renderDraft();
+  lastBackupAt=payload.savedAt; await persist(); renderRail();
   download(`GlossaryConsoleBackup_${stamp()}.json`, JSON.stringify(payload));
 }
 async function restoreBackup(file){
@@ -1390,7 +1363,7 @@ async function repoSaveDraft(reason){
   const sha=await ghCommit([{path:DRAFT_PATH,content:buildDraftFile()}],msg);
   lastAutoSave=new Date().toISOString();
   await idbSet('lastAutoSave',lastAutoSave);
-  renderRepo();
+  renderRail();
   return sha;
 }
 
@@ -1431,7 +1404,7 @@ async function maybeAutoSave(){
   if(!d.total && !Object.keys(staged).length) return;
   if(lastAutoSave && Date.now()-new Date(lastAutoSave) < AUTOSAVE_AFTER) return;
   try{ await repoSaveDraft('daily save'); }
-  catch(e){ console.warn('Autosave failed:',e); repoState.error=e.message; renderRepo(); }
+  catch(e){ console.warn('Autosave failed:',e); repoState.error=e.message; renderRail(); }
 }
 
 /* Checked in the background on load rather than blocking it: a dead network or an
@@ -1448,43 +1421,11 @@ async function verifyRepo(){
     await gh(`/git/ref/heads/${encodeURIComponent(repo.branch)}`);
     repoState={ok:true, login:who.login||'(token)', error:null};
   }catch(e){ repoState={ok:false, error:e.message}; }
-  renderRepo();
+  renderRail();
   maybeAutoSave();
 }
 // A long editing session should still get its daily save without a reload.
 setInterval(()=>maybeAutoSave(), 30*60*1000);
-
-function renderRepo(){
-  const card=$('repoCard');
-  if(!repo){
-    $('repoStats').innerHTML='';
-    $('repoBanner').innerHTML=`<div class="banner"><div>
-      <div class="banner-t">Not connected to a repository</div>
-      <div class="banner-d">Work is being kept in this browser only. Connect the repository so drafts are saved and publishing updates the site.</div>
-      </div></div>`;
-    $('repoNote').textContent='';
-    $('btnRepoSave').disabled=true; $('btnRepoLoad').disabled=true;
-    return;
-  }
-  $('btnRepoSave').disabled=false; $('btnRepoLoad').disabled=false;
-  const d=draftDiff();
-  const age=lastAutoSave?Math.floor((Date.now()-new Date(lastAutoSave))/86400000):null;
-  $('repoStats').innerHTML=[
-    ['Repository',repo.full.split('/')[1]],['Editing as',editor||'not set'],
-    ['Unsaved changes',d.total],['Next version',version]]
-    .map(([l,v])=>`<div class="stat"><div class="stat-n" style="font-size:${typeof v==='string'?'14px':'24px'}">${typeof v==='number'?v.toLocaleString():esc(v)}</div><div class="stat-l">${l}</div></div>`).join('');
-  const bad=repoState&&!repoState.ok;
-  $('repoBanner').innerHTML=bad
-    ? `<div class="banner"><div><div class="banner-t">Cannot reach the repository</div>
-        <div class="banner-d">${esc(repoState.error||'')} — the draft is still safe in this browser. Reconnect to resume saving.</div></div>
-        <div class="banner-acts"><button class="btn" onclick="document.getElementById('btnRepoConnect').click()">Reconnect</button></div></div>`
-    : `<div class="banner clean"><div><div class="banner-t">Connected${repoState?.login?` as ${esc(repoState.login)}`:''}</div>
-        <div class="banner-d">${lastAutoSave
-          ? `Draft last saved to the repository ${new Date(lastAutoSave).toLocaleString()}${age>=1?` — <strong>${age} day(s) ago</strong>, which is longer than expected. Press “Save draft now”.`:'.'}`
-          : 'The draft has not been saved to the repository yet.'}
-          ${d.total?` ${d.total.toLocaleString()} change(s) not yet published.`:''}</div></div></div>`;
-  $('repoNote').textContent=d.total?'Saved automatically every hour.':'Nothing to save.';
-}
 
 function openEdit(key){
   editingKey=key; const isNew=key===null;
@@ -1598,23 +1539,141 @@ async function unstage(){ if(editingKey!==null) delete staged[editingKey]; await
 function closeModal(){ $('modalBg').classList.remove('open'); editingKey=null; }
 
 /* ============================================================================ RENDER + BOOT */
-function renderMaster(){
+/* ============================================================================ RAIL
+   Everything that used to be five stacked cards. Written as one function so the
+   panel cannot disagree with itself: counts, connection state and the actions
+   that depend on them are all derived in one pass. */
+function renderRail(){
   detectIssues();
   const open=issues.filter(i=>resolved[i.id]!=='skipped');
-  const err=open.filter(i=>i.severity==='error').length;
   const fixable=open.filter(i=>i.fixable).length;
-  $('masterStats').innerHTML=[['Terms',master.length],['Term types',vocab.TermType.length],
-    ['Focus areas',vocab.FocusArea.length],['Sources',vocab.Source.length],['Open issues',open.length]]
-    .map(([l,n])=>`<div class="stat"><div class="stat-n">${n.toLocaleString()}</div><div class="stat-l">${l}</div></div>`).join('');
-  $('masterBanner').innerHTML=open.length?`
-    <div class="banner"><div><div class="banner-t">${open.length.toLocaleString()} issue(s) in the master list${err?` · ${err.toLocaleString()} error(s)`:''}</div>
-    <div class="banner-d">${fixable.toLocaleString()} have a recommended correction. Each is approved individually — nothing changes automatically.</div></div>
-    <div class="banner-acts"><button class="btn warn" id="btnReview">Review issues</button></div></div>`
-    :`<div class="banner clean"><div><div class="banner-t">No outstanding issues</div>
-      <div class="banner-d">Everything detectable has been fixed or skipped.</div></div>
-      <div class="banner-acts"><button class="btn" id="btnReview">Open review</button></div></div>`;
-  $('btnReview').onclick=openIssues;
+  const d=draftDiff();
+  const stagedN=Object.keys(staged).length;
+  const connected=repo&&repoState?.ok;
+  const age=lastAutoSave?Math.floor((Date.now()-new Date(lastAutoSave))/86400000):null;
+
+  const cta = !repo
+    ? `<div class="rcta"><div class="t">Not signed in</div>
+        <div class="d">Changes are being kept in this browser only. Sign in to save the draft
+          and to publish new versions.</div>
+        <button class="btn primary" id="railConnect" style="width:100%">Sign in…</button></div>`
+    : !repoState?.ok
+    ? `<div class="rcta"><div class="t">Cannot reach the repository</div>
+        <div class="d">${esc(repoState?.error||'')}<br>The draft is safe in this browser. Sign in
+          again to resume saving.</div>
+        <button class="btn primary" id="railConnect" style="width:100%">Sign in again…</button></div>`
+    : '';
+
+  $('rail').innerHTML = cta + `
+    <div class="rsec">
+      <div class="rk">Glossary</div>
+      <div class="rline"><span>Terms</span><span class="v">${master.length.toLocaleString()}</span></div>
+      <div class="rline"><button data-vocab="TermType">Term types</button><span class="v">${vocab.TermType.length}</span></div>
+      <div class="rline"><button data-vocab="FocusArea">Focus areas</button><span class="v">${vocab.FocusArea.length}</span></div>
+      <div class="rline"><button data-vocab="Source">Sources</button><span class="v">${vocab.Source.length}</span></div>
+      <div class="rbtns"><button class="btn sm" id="railVocab">Manage classifications</button></div>
+    </div>
+
+    <div class="rsec">
+      <div class="rk">Issues</div>
+      ${open.length?`
+        <div class="rline"><span>Open</span><span class="v" style="color:var(--upd-text)">${open.length.toLocaleString()}</span></div>
+        <div class="rline"><span>With a fix</span><span class="v">${fixable.toLocaleString()}</span></div>
+        <div class="rbtns"><button class="btn sm warn" id="railIssues">Review issues</button></div>`
+       :`<div class="rstate"><span class="dot g"></span> Nothing outstanding</div>
+         <div class="rbtns"><button class="btn sm" id="railIssues">Open review</button></div>`}
+    </div>
+
+    ${stagedN?`
+    <div class="rsec">
+      <div class="rk">Staged <span class="sp">${stagedN.toLocaleString()}</span></div>
+      <div class="rstate">Not in the draft yet.</div>
+      <div class="rbtns"><button class="btn sm" id="railStaged">Review staged</button></div>
+    </div>`:''}
+
+    <div class="rsec">
+      <div class="rk">Unpublished</div>
+      ${d.total?`
+        <div class="rline"><span>Added</span><span class="v" style="color:var(--add-text)">${d.added.length.toLocaleString()}</span></div>
+        <div class="rline"><span>Edited</span><span class="v" style="color:var(--upd-text)">${d.edited.length.toLocaleString()}</span></div>
+        <div class="rline"><span>Removed</span><span class="v" style="color:var(--rem-text)">${d.removed.length.toLocaleString()}</span></div>
+        <div class="rbtns">
+          <button class="btn sm" id="railDraft">Review changes</button>
+          <button class="btn ok" id="railPublish"${stagedN?' disabled title="Apply or discard the staged changes first"':''}>Publish version ${version}</button>
+        </div>`
+       :`<div class="rstate"><span class="dot g"></span> Matches published version${version>1?` ${version-1}`:''}</div>
+         <div class="rbtns"><button class="btn sm" id="railDraft">Review changes</button></div>`}
+    </div>
+
+    <div class="rsec">
+      <div class="rk">Repository</div>
+      ${connected?`
+        <div class="rstate"><span class="dot g"></span> Signed in${editor?` as ${esc(editor)}`:''}</div>
+        <div class="rstate" style="margin-top:5px;">
+          ${lastAutoSave
+            ? `Draft saved ${new Date(lastAutoSave).toLocaleString()}${age>=1?` <strong style="color:var(--upd-text)">— ${age} day(s) ago</strong>`:''}`
+            : 'Draft not yet saved here.'}</div>
+        <div class="rbtns">
+          <button class="btn sm" id="railSave">Save draft now</button>
+          <button class="btn sm" id="railLoad">Load from repository</button>
+          <button class="btn sm" id="railVersions">Versions${releases.length?` (${releases.length})`:''}</button>
+        </div>`
+       :`<div class="rstate"><span class="dot ${repo?'r':'a'}"></span> ${repo?'Disconnected':'Not signed in'}</div>
+         <div class="rbtns"><button class="btn sm" id="railVersions">Versions${releases.length?` (${releases.length})`:''}</button></div>`}
+    </div>
+
+    <div class="rsec">
+      <div class="rk">More</div>
+      <div class="rbtns">
+        <button class="btn sm" id="railImport">Import change-set…</button>
+        <button class="btn sm" id="railBackup">Download backup</button>
+        <button class="btn sm" id="railRestore">Restore from backup…</button>
+        ${repo?`<button class="btn sm" id="railSignout">Sign out</button>`:''}
+      </div>
+      <div class="rstate" style="margin-top:9px;" id="backupNote"></div>
+    </div>`;
+
+  // Wire the rail each render. It is rebuilt wholesale, so listeners cannot be
+  // attached once at boot.
+  const on=(id,fn)=>{ const e=$(id); if(e) e.onclick=fn; };
+  on('railConnect',openRepoModal);
+  on('railVocab',()=>openVocab('FocusArea'));
+  on('railIssues',openIssues);
+  on('railStaged',()=>$('exportCard').scrollIntoView({behavior:'smooth',block:'start'}));
+  on('railDraft',openDraft);
+  on('railPublish',publishVersion);
+  on('railSave',e=>saveDraftNow(e.target));
+  on('railLoad',e=>loadFromRepo(e.target));
+  on('railVersions',()=>{ renderVersions(); $('verBg').classList.add('open'); });
+  on('railImport',()=>{ $('importSummary').innerHTML=''; $('importBg').classList.add('open'); });
+  on('railBackup',exportBackup);
+  on('railRestore',()=>$('restoreFile').click());
+  on('railSignout',()=>$('repoForget').click());
+  $('rail').querySelectorAll('[data-vocab]').forEach(b=>
+    b.onclick=()=>openVocab(b.dataset.vocab));
+
+  const note=$('backupNote');
+  if(note){
+    note.innerHTML = !lastBackupAt
+      ? (d.total?`<span style="color:var(--upd-text);font-weight:600;">Never backed up — ${d.total.toLocaleString()} unsaved change(s).</span>`
+               : 'A backup captures everything in one file.')
+      : `Last backup ${new Date(lastBackupAt).toLocaleDateString()}`;
+  }
 }
+
+function openVocab(tab){ vTab=tab||vTab; renderVocab(); $('vocabBg').classList.add('open'); }
+
+function renderVersions(){
+  $('releaseList').innerHTML = releases.length ? releases.map(r=>`
+    <div class="vrow"><span class="vval">Version ${r.version}
+      <span style="font-weight:400;color:var(--ink-soft);"> · ${new Date(r.publishedAt).toLocaleString()}</span>
+      ${r.note?`<div style="font-weight:400;font-size:12px;color:var(--ink-soft);margin-top:2px;">${esc(r.note)}</div>`:''}
+      ${r.commit?`<div style="font-weight:400;font-size:11.5px;color:var(--ink-soft);margin-top:2px;">commit ${esc(r.commit.slice(0,8))}</div>`:''}</span>
+      <span class="vuse">${r.counts.added}+ / ${r.counts.edited}~ / ${r.counts.removed}−</span>
+      <button class="btn sm" data-redl="${r.version}">Download CSV</button></div>`).join('')
+    : `<div class="empty">No versions published yet.</div>`;
+}
+
 function renderFilters(){
   const fill=(id,vals)=>{const el=$(id),cur=el.value;
     el.innerHTML=el.options[0].outerHTML+vals.map(v=>`<option>${esc(v)}</option>`).join(''); el.value=cur;};
@@ -1622,19 +1681,26 @@ function renderFilters(){
 }
 function renderAll(){
   const has=master.length>0;
-  ['masterCard','draftCard','repoCard','releaseCard','importCard','browseCard','vocabCard','exportCard'].forEach(id=>$(id).classList.toggle('hidden',!has));
+  $('shell').classList.toggle('hidden',!has);
   $('boot').classList.toggle('hidden',has);
+  $('exportCard').classList.toggle('hidden', !has || !Object.keys(staged).length);
   if(has){
     // A selected row can disappear - published, reverted, or removed - so prune
     // stale keys rather than letting a bulk action target something that is gone.
     if(selected.size){ const live=new Set(allRows().map(r=>r.__key));
       [...selected].forEach(k=>{ if(!live.has(k)) selected.delete(k); }); }
-    renderMaster(); renderDraft(); renderRepo(); renderFilters(); renderTable(); renderVocab(); renderBulk(); renderExport();
+    renderRail(); renderFilters(); renderTable(); renderVocab(); renderBulk(); renderExport();
   }
   const open=issues.filter(i=>resolved[i.id]!=='skipped').length;
   $('dbStatus').textContent=has?`${master.length.toLocaleString()} terms · ${Object.keys(staged).length} staged${open?` · ${open.toLocaleString()} issues`:''}`:'No master list';
 }
 
+$('importClose').onclick=()=>{ $('importBg').classList.remove('open'); $('importSummary').innerHTML=''; };
+$('importBg').onclick=e=>{ if(e.target===$('importBg')) $('importClose').click(); };
+$('vClose').onclick=()=>$('vocabBg').classList.remove('open');
+$('vocabBg').onclick=e=>{ if(e.target===$('vocabBg')) $('vocabBg').classList.remove('open'); };
+$('verClose').onclick=()=>$('verBg').classList.remove('open');
+$('verBg').onclick=e=>{ if(e.target===$('verBg')) $('verBg').classList.remove('open'); };
 $('btnPick').onclick=()=>$('file').click();
 $('file').onchange=e=>{const f=e.target.files[0]; if(f) f.text().then(loadChangeSet);};
 const dz=$('drop');
@@ -1709,8 +1775,6 @@ $('iq').addEventListener('input',e=>{issueFilter=e.target.value;renderIssues();}
 $('iClose').onclick=()=>$('issueBg').classList.remove('open');
 $('issueBg').onclick=e=>{if(e.target===$('issueBg')) $('issueBg').classList.remove('open');};
 
-$('btnBackup').onclick=exportBackup;
-$('btnRestore').onclick=()=>$('restoreFile').click();
 $('restoreFile').onchange=async e=>{const f=e.target.files[0]; if(f) await restoreBackup(f); e.target.value='';};
 $('draftClose').onclick=()=>$('draftBg').classList.remove('open');
 $('draftBg').onclick=e=>{if(e.target===$('draftBg')) $('draftBg').classList.remove('open');};
@@ -1733,20 +1797,20 @@ $('btnResync').onclick=async()=>{
   alert(`Baseline replaced with ${rows.length.toLocaleString()} terms. The draft now matches it exactly.`);
 };
 
-$('btnRepoConnect').onclick=()=>{
+function openRepoModal(){
   $('repoEditor').value=editor||'';
   $('repoFull').value=repo?.full||REPO_DEFAULTS.full;
   $('repoBranch').value=repo?.branch||REPO_DEFAULTS.branch;
   $('repoToken').value=repo?.token||'';
   $('repoErr').classList.remove('show');
   $('repoBg').classList.add('open');
-};
+}
 $('repoCancel').onclick=()=>$('repoBg').classList.remove('open');
 $('repoBg').onclick=e=>{if(e.target===$('repoBg')) $('repoBg').classList.remove('open');};
 $('repoForget').onclick=async()=>{
   if(!confirm('Disconnect from the repository?\n\nThe draft stays in this browser, but nothing will be saved or published until you reconnect.')) return;
   repo=null; repoState=null; await idbSet('repo',null);
-  $('repoBg').classList.remove('open'); renderRepo();
+  $('repoBg').classList.remove('open'); renderRail();
 };
 $('repoTest').onclick=async()=>{
   const full=$('repoFull').value.trim(), branch=$('repoBranch').value.trim()||'main',
@@ -1763,7 +1827,7 @@ $('repoTest').onclick=async()=>{
   try{
     editor=name; await idbSet('editor',editor);
     await repoConnect(full,branch,token);
-    $('repoBg').classList.remove('open'); renderRepo();
+    $('repoBg').classList.remove('open'); renderRail();
     if(confirm('Connected.\n\nLoad the glossary and any saved draft from the repository now?\n\nThis replaces what is currently in this browser.')){
       const r=await repoLoad();
       alert(`Loaded ${r.terms.toLocaleString()} terms${r.draft?' and a saved draft':''} from the repository.`);
@@ -1776,28 +1840,27 @@ $('repoTest').onclick=async()=>{
     err.classList.add('show');
   }finally{ $('repoTest').disabled=false; $('repoTest').textContent='Check and save'; }
 };
-$('btnRepoSave').onclick=async()=>{
-  $('btnRepoSave').disabled=true; $('btnRepoSave').textContent='Saving…';
+async function saveDraftNow(btn){
+  if(btn){ btn.disabled=true; btn.textContent='Saving…'; }
   try{
     const sha=await repoSaveDraft('saved by hand');
     alert(sha?`Draft saved to the repository.\n\nCommit ${sha.slice(0,8)}.`:'There are no changes to save.');
   }catch(e){ alert(`Could not save the draft.\n\n${e.message}`); }
-  finally{ $('btnRepoSave').disabled=false; $('btnRepoSave').textContent='Save draft now'; renderRepo(); }
-};
-$('btnRepoLoad').onclick=async()=>{
+  finally{ renderRail(); }
+}
+async function loadFromRepo(btn){
   if(!confirm('Load the glossary and draft from the repository?\n\nEverything currently in this browser is replaced. Save the draft first if it is ahead.')) return;
-  $('btnRepoLoad').disabled=true; $('btnRepoLoad').textContent='Loading…';
+  if(btn){ btn.disabled=true; btn.textContent='Loading…'; }
   try{
     const r=await repoLoad();
     alert(`Loaded ${r.terms.toLocaleString()} terms${r.draft?' and a saved draft':''}.`);
-  }catch(e){ alert(`Could not load from the repository.\n\n${e.message}`); }
-  finally{ $('btnRepoLoad').disabled=false; $('btnRepoLoad').textContent='Load from repository'; }
-};
+  }catch(e){ alert(`Could not load from the repository.\n\n${e.message}`); renderRail(); }
+}
 
 $('mCancel').onclick=closeModal; $('mSave').onclick=saveEdit;
 $('mRemove').onclick=stageRemove; $('mUnstage').onclick=unstage;
 $('modalBg').onclick=e=>{if(e.target===$('modalBg')) closeModal();};
-document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeModal();['issueBg','renBg','draftBg','repoBg'].forEach(i=>$(i).classList.remove('open'));}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeModal();['issueBg','renBg','draftBg','repoBg','vocabBg','importBg','verBg'].forEach(i=>$(i).classList.remove('open'));}});
 
 $('btnExportChanges').onclick=exportChanges;
 $('btnExportFull').onclick=exportFull;
