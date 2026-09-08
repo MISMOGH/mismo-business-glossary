@@ -118,11 +118,13 @@ Detected by the console's issue rules. Counts are from the original CSV analysis
 | Doubled internal spaces | 49 |
 | HTML entities where a literal character was meant | 11 |
 | Character-encoding corruption (UTF-8 read as Latin-1) | 1 |
+| Destroyed characters (`U+FFFD`) — **not in the original handoff** | 26 |
 | Missing term type | 1 |
 
-The encoding corruption is in **Credit Report**, where an apostrophe arrives as `â€™`.
-The console corrects it by explicit substitution rather than re-decoding the whole
-string, which would corrupt correctly-encoded text elsewhere.
+**The encoding row count above is wrong, and was wrong in the original handoff.** It
+counted only the reversible `â€™` form, which appears once. The destructive `U+FFFD`
+form affects a further 26 terms, six of them in the term name. Full analysis, the
+repair rules, and a test for the upstream platform are in `docs/encoding.md`.
 
 Note that **none of these are fixed in `data/glossary.json`** — it is a faithful
 extraction of the baseline. Fixes belong in the console, which stages them for

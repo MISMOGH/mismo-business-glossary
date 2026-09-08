@@ -32,9 +32,12 @@ console/
   index.html            management console (self-contained, opens from file://)
 docs/
   data-notes.md         data shape, known quirks, verified counts
+  encoding.md           damaged characters, repair rules, platform test
   deployment.md         hosting plan and what AWS needs to provision
 tools/
   extract-data.py       regenerates data/ from a console export
+  encoding-canary.csv   change-set for testing what the platform preserves
+  check-encoding.py     checks a platform export against the canary
 .github/workflows/
   deploy.yml            publishes on push to main
 ```
@@ -66,24 +69,32 @@ Before switching between local files, localhost and a hosted copy: use
 
 ## Known work items
 
-1. **`Data Governance &amp; Management CoP (DGM)`** — an HTML entity in the source
+1. **27 terms carry damaged characters**, six of them in the term name. The console
+   now detects and proposes a correction for every one; they still need approving,
+   and the data regenerating afterwards. Before restoring any stripped symbols to
+   the glossary, run the platform test in `docs/encoding.md` — the pipeline that
+   caused this damage may still be causing it.
+2. **`Data Governance &amp; Management CoP (DGM)`** — an HTML entity in the source
    data means this source does not match its own description, so those 11 terms
    cannot be filtered by source at all. Fix in the console, then re-export. See
    `docs/data-notes.md`.
-2. **Every term shows "None recorded" for AKA and Related.** The baseline export has
+3. **Every term shows "None recorded" for AKA and Related.** The baseline export has
    no column for them, so the fields are empty for all 8,397 terms. The relationship
    display works; there is simply nothing to display yet. Populating it is console
    work.
-3. **Decide whether the console is hosted at all.** It has no authentication and
+4. **Decide whether the console is hosted at all.** It has no authentication and
    contains the entire glossary. See `docs/deployment.md`.
-4. **Term Type: single-value or multi-value?** Built as pipe-delimited multi-value to
+5. **Term Type: single-value or multi-value?** Built as pipe-delimited multi-value to
    match the other two fields, but MISMO's published Term Type page states every term
    gets one and only one. Currently no row in the data uses more than one, so a revert
    is cheap. Unresolved.
-5. **AKA and Related have no column in the upload format.** They travel in the full
+6. **AKA and Related have no column in the upload format.** They travel in the full
    export and the console backup, never in a change-set. Extending MISMO's upload
    schema to carry them is a change worth planning for.
-6. **Fonts load from Google Fonts.** If MISMO would rather not depend on a third-party
+7. **Which names should carry a trademark symbol.** Needs the list of registered
+   marks and the house rule for how often to mark them. See the scope note at the end
+   of `docs/encoding.md`.
+8. **Fonts load from Google Fonts.** If MISMO would rather not depend on a third-party
    CDN, self-host Libre Franklin. The page already falls back to `system-ui` if the
    request is blocked.
 

@@ -489,13 +489,63 @@ const MOJIBAKE={'\u00e2\u20ac\u2122':"\u2019",'\u00e2\u20ac\u02dc':"\u2018",
 const MOJI_RE=new RegExp(Object.keys(MOJIBAKE).join('|'),'g');
 const fixMojibake=s=>String(s).replace(MOJI_RE,m=>MOJIBAKE[m]??m);
 
+/* A different and worse class of damage. U+FFFD is what a decoder writes when
+   it meets a byte it cannot interpret - the original character is already gone,
+   so unlike the mojibake above this is not reversible. Seven rows carry it in a
+   second-generation form, "i-bf-bd", where the replacement character was itself
+   re-encoded and mis-read.
+
+   Everything below is inference from context, not recovery, which is why each
+   correction is still approved individually. */
+const FFFD='\uFFFD';
+const FFFD_DOUBLE='\u00ef\u00bf\u00bd';
+const RSQUO='\u2019', LDQUO='\u201c', RDQUO='\u201d', EMDASH='\u2014', REG='\u00ae';
+const hasFFFD=s=>String(s).includes(FFFD)||String(s).includes(FFFD_DOUBLE);
+
+/* One-off decisions taken at review, recorded so they are not re-argued later. */
+const FFFD_OVERRIDES=[
+  // Reinforcement Learning: an opening quote with no closing partner anywhere in
+  // the definition. Reviewed 2026-09-08 - delete rather than invent a close.
+  ['. '+FFFD+'The agent', '. The agent']
+];
+
+function fixReplacementChar(s){
+  let out=String(s).split(FFFD_DOUBLE).join(FFFD);
+  out=fixMojibake(out);
+  for(const [a,b] of FFFD_OVERRIDES) out=out.split(a).join(b);
+  // Whitespace on both sides means a dash. Checked against the whole glossary:
+  // every marker of this shape is an em dash.
+  out=out.replace(new RegExp('(?<=\\s)'+FFFD+'+(?=\\s)','g'), EMDASH);
+  // MERS is a registered mark. The term "XML" carries the same boilerplate
+  // sentence with its ® intact, which is what identifies the character.
+  out=out.split('MERS'+FFFD).join('MERS'+REG);
+  // Quotes are resolved BEFORE possessives, and the order is load-bearing: a
+  // closing quote after a word ending in "s" (…"yes"…) is locally identical to
+  // a plural possessive (owners'). Only pairing separates them, so pair first
+  // and treat what is left over as a possessive.
+  out=out.replace(new RegExp(FFFD+'{1,3}([^'+FFFD+']{1,400}?)'+FFFD+'{1,3}','g'), LDQUO+'$1'+RDQUO);
+  out=out.replace(new RegExp('(?<=\\w)'+FFFD+'{1,3}(?=s\\b)','g'), RSQUO);
+  out=out.replace(new RegExp('(?<=s)'+FFFD+'{1,3}(?=\\s)','g'), RSQUO);
+  return out;
+}
+
 const ISSUE_RULES=[
   {type:'entity',severity:'error',title:'HTML entity in stored text',
    desc:'An encoded entity where the literal character was intended — usually an artefact of a web form.',
    fields:MASTER_COLS, detect:v=>/&(?:amp|lt|gt|quot|#39|apos|nbsp);/.test(v), fix:v=>decodeEntities(v)},
   {type:'mojibake',severity:'error',title:'Character encoding corruption',
-   desc:'Text that was UTF-8 but read as Latin-1 upstream, so punctuation arrives as garbled characters.',
+   desc:'Text that was UTF-8 but read as Latin-1 upstream, so punctuation arrives as garbled characters. Reversible — the original bytes are intact.',
    fields:MASTER_COLS, detect:v=>MOJI_RE.test(v), fix:v=>fixMojibake(v)},
+  {type:'replacement',severity:'error',title:'Lost character (U+FFFD)',
+   desc:'A byte the source system could not decode, so the character itself is gone. The correction below is inferred from context, not recovered — read it before approving.',
+   fields:MASTER_COLS,
+   detect:v=>hasFFFD(v)&&!hasFFFD(fixReplacementChar(v)),
+   fix:v=>fixReplacementChar(v)},
+  {type:'replacement-manual',severity:'error',title:'Lost character, no clear reading',
+   desc:'A U+FFFD whose intended character context does not pin down. Needs a decision, so nothing is proposed.',
+   fields:MASTER_COLS,
+   detect:v=>hasFFFD(v)&&hasFFFD(fixReplacementChar(v)),
+   fix:null},
   {type:'newline',severity:'warning',title:'Line break inside a field',
    desc:'Valid CSV, but it breaks line-based parsers downstream and renders unpredictably. Collapsed to a single space.',
    fields:['Term','Definition'], detect:v=>/[\r\n]/.test(v), fix:v=>v.replace(/\s*[\r\n]+\s*/g,' ').trim()},
