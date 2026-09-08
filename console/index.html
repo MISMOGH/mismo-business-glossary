@@ -351,6 +351,8 @@
   <h2>Connect to the repository</h2>
   <p class="hint">This only needs doing once on this machine. The access token is kept in this browser and is never sent anywhere except GitHub.</p>
   <div class="err" id="repoErr"></div>
+  <div class="field"><label>Your name</label><input type="text" id="repoEditor" placeholder="e.g. Jordan Ellis">
+    <div class="fh">Recorded on every change so the history says who made it. The access token belongs to the account rather than the person, so without this every entry looks identical no matter who is facilitating.</div></div>
   <div class="field"><label>Repository</label><input type="text" id="repoFull" placeholder="owner/repository">
     <div class="fh">For example <code>MISMOGH/mismo-business-glossary</code>.</div></div>
   <div class="field"><label>Branch</label><input type="text" id="repoBranch" placeholder="main"></div>
@@ -1236,8 +1238,13 @@ async function restoreBackup(file){
 const REPO_DEFAULTS={full:'MISMOGH/mismo-business-glossary', branch:'main'};
 const DATA_PATH='data/glossary.json';
 const DRAFT_PATH='.console/draft.json';
-const AUTOSAVE_AFTER=24*60*60*1000;      // once a day is enough; this is a months-long draft
+/* Hourly, not daily. A draft commit is about 14KB because it stores only the
+   difference from the published version, so a tighter interval costs almost
+   nothing — and it shrinks the window of work stranded in a browser nobody can
+   get into if a facilitator leaves abruptly. */
+const AUTOSAVE_AFTER=60*60*1000;
 let repo=null;                            // {full, branch, token}
+let editor=null;                          // who is making the changes, for attribution
 let lastAutoSave=null, repoState=null;    // repoState: {ok, login, error, lastCommit}
 
 const ghHeaders=extra=>({Authorization:`Bearer ${repo.token}`,
@@ -1304,6 +1311,7 @@ function buildDraftFile(){
   const d=draftDiff();
   return JSON.stringify({
     format:1, app:'mismo-glossary-console', savedAt:new Date().toISOString(),
+    editor: editor||null,
     note:'Working draft. The difference from the published data/glossary.json, not a full copy.',
     summary:{added:d.added.length,edited:d.edited.length,removed:d.removed.length,
              staged:Object.keys(staged).length,nextVersion:version},
@@ -1373,8 +1381,12 @@ async function repoLoad(){
 async function repoSaveDraft(reason){
   const d=draftDiff();
   if(!d.total && !Object.keys(staged).length) return null;
+  // The token belongs to the account, not the person, so every commit would
+  // otherwise read the same name however many facilitators come and go. The
+  // editor's name is what makes "who changed this" survive a handover.
+  const who=editor?` [${editor}]`:'';
   const msg=`Save working draft (${d.added.length} added, ${d.edited.length} edited, `
-    +`${d.removed.length} removed)${reason?` — ${reason}`:''}`;
+    +`${d.removed.length} removed)${reason?` — ${reason}`:''}${who}`;
   const sha=await ghCommit([{path:DRAFT_PATH,content:buildDraftFile()}],msg);
   lastAutoSave=new Date().toISOString();
   await idbSet('lastAutoSave',lastAutoSave);
@@ -1400,7 +1412,9 @@ async function repoPublish(note){
     diff:{added:[],edited:[],removed:[]},
     vocab,staged:{},resolved,touched:{},releases,version:version+1,fixCount,newCounter});
   return ghCommit([{path:DATA_PATH,content:out},{path:DRAFT_PATH,content:empty}],
-    `Publish version ${version}${note?` — ${note}`:''}\n\n${master.length.toLocaleString()} terms.`);
+    `Publish version ${version}${note?` — ${note}`:''}\n\n`
+    +`${master.length.toLocaleString()} terms.`
+    +(editor?`\nPublished by ${editor}.`:''));
 }
 
 /* ---- autosave ------------------------------------------------------------ */
@@ -1449,7 +1463,7 @@ function renderRepo(){
   const d=draftDiff();
   const age=lastAutoSave?Math.floor((Date.now()-new Date(lastAutoSave))/86400000):null;
   $('repoStats').innerHTML=[
-    ['Repository',repo.full.split('/')[1]],['Branch',repo.branch],
+    ['Repository',repo.full.split('/')[1]],['Editing as',editor||'not set'],
     ['Unsaved changes',d.total],['Next version',version]]
     .map(([l,v])=>`<div class="stat"><div class="stat-n" style="font-size:${typeof v==='string'?'14px':'24px'}">${typeof v==='number'?v.toLocaleString():esc(v)}</div><div class="stat-l">${l}</div></div>`).join('');
   const bad=repoState&&!repoState.ok;
@@ -1459,10 +1473,10 @@ function renderRepo(){
         <div class="banner-acts"><button class="btn" onclick="document.getElementById('btnRepoConnect').click()">Reconnect</button></div></div>`
     : `<div class="banner clean"><div><div class="banner-t">Connected${repoState?.login?` as ${esc(repoState.login)}`:''}</div>
         <div class="banner-d">${lastAutoSave
-          ? `Draft last saved to the repository ${new Date(lastAutoSave).toLocaleString()}${age>=2?` (${age} days ago)`:''}.`
+          ? `Draft last saved to the repository ${new Date(lastAutoSave).toLocaleString()}${age>=1?` — <strong>${age} day(s) ago</strong>, which is longer than expected. Press “Save draft now”.`:'.'}`
           : 'The draft has not been saved to the repository yet.'}
           ${d.total?` ${d.total.toLocaleString()} change(s) not yet published.`:''}</div></div></div>`;
-  $('repoNote').textContent=d.total?'Saved automatically once a day.':'Nothing to save.';
+  $('repoNote').textContent=d.total?'Saved automatically every hour.':'Nothing to save.';
 }
 
 function openEdit(key){
@@ -1713,6 +1727,7 @@ $('btnResync').onclick=async()=>{
 };
 
 $('btnRepoConnect').onclick=()=>{
+  $('repoEditor').value=editor||'';
   $('repoFull').value=repo?.full||REPO_DEFAULTS.full;
   $('repoBranch').value=repo?.branch||REPO_DEFAULTS.branch;
   $('repoToken').value=repo?.token||'';
@@ -1728,8 +1743,10 @@ $('repoForget').onclick=async()=>{
 };
 $('repoTest').onclick=async()=>{
   const full=$('repoFull').value.trim(), branch=$('repoBranch').value.trim()||'main',
-        token=$('repoToken').value.trim();
+        token=$('repoToken').value.trim(), name=$('repoEditor').value.trim();
   const err=$('repoErr');
+  if(!name){ err.innerHTML='<strong>Your name is required</strong>, so changes can be attributed.';
+    err.classList.add('show'); return; }
   if(!/^[\w.-]+\/[\w.-]+$/.test(full)){
     err.innerHTML='<strong>Repository</strong> should look like <code>owner/repository</code>.';
     err.classList.add('show'); return;
@@ -1737,6 +1754,7 @@ $('repoTest').onclick=async()=>{
   if(!token){ err.innerHTML='<strong>An access token is required.</strong>'; err.classList.add('show'); return; }
   $('repoTest').disabled=true; $('repoTest').textContent='Checking…';
   try{
+    editor=name; await idbSet('editor',editor);
     await repoConnect(full,branch,token);
     $('repoBg').classList.remove('open'); renderRepo();
     if(confirm('Connected.\n\nLoad the glossary and any saved draft from the repository now?\n\nThis replaces what is currently in this browser.')){
@@ -1805,6 +1823,7 @@ async function bootstrap(force){
         fixCount=(await idbGet('fixCount'))||0;
         newCounter=(await idbGet('newCounter'))||1;
         repo=(await idbGet('repo'))||null;
+        editor=(await idbGet('editor'))||null;
         lastAutoSave=(await idbGet('lastAutoSave'))||null;
         if(!vocab?.TermType?.length) seedVocab();
         renderAll();
