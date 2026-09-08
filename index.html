@@ -290,9 +290,17 @@ let observer=null;
 /* ============================================================================ LOAD */
 async function load(){
   try{
+    /* cache:'no-cache' forces revalidation against the server rather than
+       trusting a cached copy. Without it a returning visitor keeps whatever
+       glossary their browser already has until it expires — so a freshly
+       published definition can appear live to whoever checks in a clean
+       window, while everyone else quietly reads the old one. The server still
+       answers 304 when nothing changed, so this costs a round trip, not a
+       re-download of 2.9MB. */
+    const opts={cache:'no-cache'};
     const [g,r]=await Promise.all([
-      fetch(DATA_URL).then(res=>{ if(!res.ok) throw new Error(`${DATA_URL} — HTTP ${res.status}`); return res.json(); }),
-      fetch(REF_URL).then(res=>{ if(!res.ok) throw new Error(`${REF_URL} — HTTP ${res.status}`); return res.json(); })
+      fetch(DATA_URL,opts).then(res=>{ if(!res.ok) throw new Error(`${DATA_URL} — HTTP ${res.status}`); return res.json(); }),
+      fetch(REF_URL,opts).then(res=>{ if(!res.ok) throw new Error(`${REF_URL} — HTTP ${res.status}`); return res.json(); })
     ]);
     TERMS=g.terms; REF=r;
     byId=new Map(TERMS.map(t=>[t.id,t]));

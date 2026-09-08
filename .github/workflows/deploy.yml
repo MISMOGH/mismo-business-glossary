@@ -13,6 +13,11 @@ name: Deploy
 on:
   push:
     branches: [main]
+    paths-ignore:
+      # The console commits the facilitator's work in progress here every hour
+      # during an editing session. It is not part of the site, so rebuilding for
+      # it wastes runs and creates races with a real publish.
+      - '.console/**'
   workflow_dispatch:
 
 permissions:
@@ -20,7 +25,10 @@ permissions:
 
 concurrency:
   group: deploy
-  cancel-in-progress: true
+  # Deliberately not cancelling. This is right for CI, where only the newest
+  # result matters, but a deploy that gets cancelled leaves the site serving
+  # older content with nothing obviously wrong.
+  cancel-in-progress: false
 
 jobs:
   # ---------------------------------------------------------------- validate
