@@ -233,6 +233,20 @@
     </div>
   </div>
 
+  <div class="card hidden" id="repoCard">
+    <h2>Repository</h2>
+    <p class="hint">The glossary lives in a GitHub repository. Publishing writes the new version there and the public site rebuilds itself. The working draft is saved there too, once a day, so months of edits are never held in this browser alone.</p>
+    <div class="stats" id="repoStats"></div>
+    <div id="repoBanner"></div>
+    <div style="display:flex; gap:9px; flex-wrap:wrap; align-items:center; margin-top:14px;
+                padding-top:14px; border-top:1px solid var(--line);">
+      <button class="btn" id="btnRepoConnect">Connect…</button>
+      <button class="btn" id="btnRepoSave">Save draft now</button>
+      <button class="btn" id="btnRepoLoad">Load from repository</button>
+      <span class="count" id="repoNote"></span>
+    </div>
+  </div>
+
   <div class="card hidden" id="releaseCard">
     <h2>Version history</h2>
     <p class="hint">Published releases. Each change-set is kept so it can be downloaded again.</p>
@@ -330,6 +344,23 @@
   <div class="modal-foot">
     <button class="btn" id="renCancel">Cancel</button>
     <button class="btn primary" id="renGo">Rename</button>
+  </div>
+</div></div>
+
+<div class="modal-bg" id="repoBg"><div class="modal">
+  <h2>Connect to the repository</h2>
+  <p class="hint">This only needs doing once on this machine. The access token is kept in this browser and is never sent anywhere except GitHub.</p>
+  <div class="err" id="repoErr"></div>
+  <div class="field"><label>Repository</label><input type="text" id="repoFull" placeholder="owner/repository">
+    <div class="fh">For example <code>MISMOGH/mismo-business-glossary</code>.</div></div>
+  <div class="field"><label>Branch</label><input type="text" id="repoBranch" placeholder="main"></div>
+  <div class="field"><label>Access token</label><input type="password" id="repoToken" placeholder="github_pat_…">
+    <div class="fh">A fine-grained token scoped to this one repository, with <strong>Contents: read and write</strong>. Anyone who can use this browser profile can publish, so treat the machine accordingly.</div></div>
+  <div class="modal-foot">
+    <button class="btn danger" id="repoForget">Disconnect</button>
+    <div style="flex:1;"></div>
+    <button class="btn" id="repoCancel">Cancel</button>
+    <button class="btn primary" id="repoTest">Check and save</button>
   </div>
 </div></div>
 
@@ -1045,13 +1076,33 @@ async function publishVersion(){
   if(note===null) return;
   const rows=buildChangeSet(d);
   download(`GlossaryChangeSet_v${version}_${stamp()}.csv`, toCSV(rows,COLS));
+
+  // When the repository is connected it is the system of record, so publishing
+  // means committing data/glossary.json — that commit is what updates the public
+  // site. The change-set CSV above is still produced, but as a record of what
+  // changed for the working group, not as the delivery mechanism.
+  let sha=null;
+  if(repo && repoState?.ok){
+    try{ sha=await repoPublish(String(note||'').trim()); }
+    catch(e){
+      alert(`Version ${version} was NOT published.\n\n${e.message}\n\n`
+        +`Nothing has changed in the repository and the draft is untouched, so this can be retried. `
+        +`The change-set CSV has still downloaded.`);
+      return;
+    }
+  }
+
   releases.unshift({version, publishedAt:new Date().toISOString(),
     counts:{added:d.added.length,edited:d.edited.length,removed:d.removed.length},
-    changeSet:rows, note:String(note||'').trim()});
+    changeSet:rows, note:String(note||'').trim(), commit:sha});
   baseline=master.map(r=>({...r}));   // the draft becomes the new published state
   touched={}; version++;
+  lastAutoSave=new Date().toISOString();
+  await idbSet('lastAutoSave',lastAutoSave);
   await persist(); renderDraft(); renderAll();
-  alert(`Version ${version-1} published.\n\nThe change-set CSV has downloaded — upload it to the glossary system.\n\nImportant: additions were sent without an ID, so the glossary system assigns the real ones. Once it has processed the upload, use "Load official export" to re-sync, otherwise the locally generated IDs for those new terms will not match.`);
+  alert(sha
+    ? `Version ${version-1} published.\n\nCommitted as ${sha.slice(0,8)}. The public site rebuilds itself in a minute or two.\n\nA change-set CSV has also downloaded, as a record of what changed.`
+    : `Version ${version-1} published.\n\nThe change-set CSV has downloaded — upload it to the glossary system.\n\nImportant: additions were sent without an ID, so the glossary system assigns the real ones. Once it has processed the upload, use "Load official export" to re-sync, otherwise the locally generated IDs for those new terms will not match.`);
 }
 
 function openDraft(){ renderDraftModal(); $('draftBg').classList.add('open'); }
@@ -1165,7 +1216,250 @@ async function restoreBackup(file){
   alert(`Restored ${master.length.toLocaleString()} terms and ${draftDiff().total.toLocaleString()} draft change(s).`);
 }
 
-/* ============================================================================ EDIT MODAL */
+/* ============================================================================ REPOSITORY SYNC
+   The repository is the system of record. This browser holds a working copy.
+
+   Two things are written there:
+     data/glossary.json   the published glossary. The public site reads this file,
+                          so committing it is what publishes a version.
+     .console/draft.json  the work in progress. Saved once a day so that a draft
+                          built up over months is never held only in IndexedDB,
+                          which one cleared browser profile would destroy.
+
+   The draft file stores the *difference* from the published version rather than
+   a full copy. A full copy is ~2.9MB; committing that daily for months would
+   bloat the repository for no benefit. It also means the draft file stays small
+   enough to read at a glance.
+
+   Writes go through the Git Data API (blob -> tree -> commit -> ref), not the
+   Contents API, which refuses anything over 1MB. */
+const REPO_DEFAULTS={full:'MISMOGH/mismo-business-glossary', branch:'main'};
+const DATA_PATH='data/glossary.json';
+const DRAFT_PATH='.console/draft.json';
+const AUTOSAVE_AFTER=24*60*60*1000;      // once a day is enough; this is a months-long draft
+let repo=null;                            // {full, branch, token}
+let lastAutoSave=null, repoState=null;    // repoState: {ok, login, error, lastCommit}
+
+const ghHeaders=extra=>({Authorization:`Bearer ${repo.token}`,
+  'X-GitHub-Api-Version':'2022-11-28', ...extra});
+const ghURL=p=>`https://api.github.com/repos/${repo.full}${p}`;
+
+async function gh(path,opts={}){
+  const r=await fetch(ghURL(path),{...opts,headers:ghHeaders(opts.headers)});
+  if(!r.ok){
+    let msg=`${r.status} ${r.statusText}`;
+    try{ const j=await r.json(); if(j.message) msg=j.message; }catch(e){}
+    throw new Error(msg);
+  }
+  return r.status===204?null:r.json();
+}
+
+/* btoa() needs a binary string, and spreading a 3MB byte array into
+   String.fromCharCode overflows the call stack, so convert in chunks. */
+function toBase64(str){
+  const bytes=new TextEncoder().encode(str);
+  let bin='', CH=0x8000;
+  for(let i=0;i<bytes.length;i+=CH) bin+=String.fromCharCode.apply(null,bytes.subarray(i,i+CH));
+  return btoa(bin);
+}
+
+async function ghReadFile(path){
+  // The raw media type is required above 1MB; the JSON form omits content there.
+  const r=await fetch(ghURL(`/contents/${path}?ref=${encodeURIComponent(repo.branch)}`),
+    {headers:ghHeaders({Accept:'application/vnd.github.raw'})});
+  if(r.status===404) return null;
+  if(!r.ok) throw new Error(`Reading ${path}: ${r.status} ${r.statusText}`);
+  return r.text();
+}
+
+/* One commit, however many files. Built through the Git Data API so file size
+   is not a constraint and the draft and the published data can move together. */
+async function ghCommit(files,message){
+  const ref=await gh(`/git/ref/heads/${encodeURIComponent(repo.branch)}`);
+  const parent=ref.object.sha;
+  const base=await gh(`/git/commits/${parent}`);
+  const blobs=[];
+  for(const f of files){
+    const b=await gh('/git/blobs',{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({content:toBase64(f.content),encoding:'base64'})});
+    blobs.push({path:f.path,mode:'100644',type:'blob',sha:b.sha});
+  }
+  const tree=await gh('/git/trees',{method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({base_tree:base.tree.sha,tree:blobs})});
+  const commit=await gh('/git/commits',{method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({message,tree:tree.sha,parents:[parent]})});
+  // Not forced: if the branch moved under us, this fails rather than discarding
+  // someone else's commit.
+  await gh(`/git/refs/heads/${encodeURIComponent(repo.branch)}`,{method:'PATCH',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({sha:commit.sha,force:false})});
+  return commit.sha;
+}
+
+/* ---- draft file ---------------------------------------------------------- */
+function buildDraftFile(){
+  const d=draftDiff();
+  return JSON.stringify({
+    format:1, app:'mismo-glossary-console', savedAt:new Date().toISOString(),
+    note:'Working draft. The difference from the published data/glossary.json, not a full copy.',
+    summary:{added:d.added.length,edited:d.edited.length,removed:d.removed.length,
+             staged:Object.keys(staged).length,nextVersion:version},
+    diff:{added:d.added.map(x=>x.row),
+          edited:d.edited.map(x=>x.row),
+          removed:d.removed.map(x=>x.row.ID)},
+    vocab, staged, resolved, touched, releases, version, fixCount, newCounter
+  });
+}
+function applyDraftFile(payload,baseRows){
+  master=baseRows.map(r=>({...r}));
+  baseline=baseRows.map(r=>({...r}));
+  const byId=new Map(master.map(r=>[r.ID,r]));
+  (payload.diff.removed||[]).forEach(id=>{
+    const i=master.findIndex(r=>r.ID===id); if(i>-1) master.splice(i,1);
+  });
+  (payload.diff.edited||[]).forEach(row=>{
+    const i=master.findIndex(r=>r.ID===row.ID);
+    if(i>-1) master[i]={...row}; else master.push({...row});
+  });
+  (payload.diff.added||[]).forEach(row=>{ if(!byId.has(row.ID)) master.push({...row}); });
+  vocab=payload.vocab||vocab; staged=payload.staged||{}; resolved=payload.resolved||{};
+  touched=payload.touched||{}; releases=payload.releases||[]; version=payload.version||1;
+  fixCount=payload.fixCount||0; newCounter=payload.newCounter||1;
+}
+
+/* ---- operations ---------------------------------------------------------- */
+async function repoConnect(full,branch,token){
+  const probe={full,branch,token}, prev=repo;
+  repo=probe;
+  try{
+    const me=await (await fetch('https://api.github.com/user',{headers:ghHeaders()})).json();
+    await gh(`/git/ref/heads/${encodeURIComponent(branch)}`);   // proves branch access
+    repoState={ok:true, login:me.login||'(token)', error:null};
+    await idbSet('repo',probe); await idbSet('lastAutoSave',lastAutoSave);
+    return true;
+  }catch(e){ repo=prev; repoState={ok:false,error:e.message}; throw e; }
+}
+
+async function repoLoad(){
+  const dataText=await ghReadFile(DATA_PATH);
+  if(!dataText) throw new Error(`${DATA_PATH} not found on ${repo.branch}.`);
+  const parsed=JSON.parse(dataText);
+  const rows=parsed.terms.map(t=>({ID:t.id,Term:t.term,Definition:t.definition,
+    Source:t.source,TermType:t.termType,FocusArea:t.focusArea,
+    AKA:(t.aka||[]).join('|'),Related:(t.related||[]).join('|')}));
+  const draftText=await ghReadFile(DRAFT_PATH);
+  if(draftText){
+    const payload=JSON.parse(draftText);
+    applyDraftFile(payload,rows);
+    lastAutoSave=payload.savedAt;
+  }else{
+    master=rows; baseline=rows.map(r=>({...r})); touched={}; staged={}; resolved={};
+    if(!vocab.TermType.length) seedVocab();
+  }
+  if(!vocab.TermType.length) seedVocab();
+  await idbSet('lastAutoSave',lastAutoSave);
+  await persist(); renderAll();
+  return {terms:master.length, draft:!!draftText};
+}
+
+async function repoSaveDraft(reason){
+  const d=draftDiff();
+  if(!d.total && !Object.keys(staged).length) return null;
+  const msg=`Save working draft (${d.added.length} added, ${d.edited.length} edited, `
+    +`${d.removed.length} removed)${reason?` — ${reason}`:''}`;
+  const sha=await ghCommit([{path:DRAFT_PATH,content:buildDraftFile()}],msg);
+  lastAutoSave=new Date().toISOString();
+  await idbSet('lastAutoSave',lastAutoSave);
+  renderRepo();
+  return sha;
+}
+
+/* Publishing writes the glossary the public site reads, so the commit is the
+   release. The draft file is emptied in the same commit — the two must not
+   disagree about what is published. */
+async function repoPublish(note){
+  const out=JSON.stringify({
+    meta:{version:new Date().toISOString().slice(0,10),
+          source:`console v${version}`, count:master.length,
+          note:'Published from the management console.'},
+    terms:master.map(r=>({id:r.ID,term:r.Term,definition:r.Definition,source:r.Source,
+      termType:r.TermType,focusArea:r.FocusArea,
+      aka:splitMulti(r.AKA),related:splitMulti(r.Related)}))
+  },null,0).replace(/\},\{"id"/g,'},\n{"id"');   // one term per line, for readable diffs
+  const empty=JSON.stringify({format:1,app:'mismo-glossary-console',
+    savedAt:new Date().toISOString(),note:'No changes since the last published version.',
+    summary:{added:0,edited:0,removed:0,staged:0,nextVersion:version+1},
+    diff:{added:[],edited:[],removed:[]},
+    vocab,staged:{},resolved,touched:{},releases,version:version+1,fixCount,newCounter});
+  return ghCommit([{path:DATA_PATH,content:out},{path:DRAFT_PATH,content:empty}],
+    `Publish version ${version}${note?` — ${note}`:''}\n\n${master.length.toLocaleString()} terms.`);
+}
+
+/* ---- autosave ------------------------------------------------------------ */
+async function maybeAutoSave(){
+  if(!repo||!repoState?.ok) return;
+  const d=draftDiff();
+  if(!d.total && !Object.keys(staged).length) return;
+  if(lastAutoSave && Date.now()-new Date(lastAutoSave) < AUTOSAVE_AFTER) return;
+  try{ await repoSaveDraft('daily save'); }
+  catch(e){ console.warn('Autosave failed:',e); repoState.error=e.message; renderRepo(); }
+}
+
+/* Checked in the background on load rather than blocking it: a dead network or an
+   expired token should not stop someone editing. The draft is safe locally
+   either way; the panel just says so. */
+async function verifyRepo(){
+  if(!repo) return;
+  try{
+    const me=await fetch('https://api.github.com/user',{headers:ghHeaders()});
+    if(!me.ok) throw new Error(me.status===401
+      ? 'The access token was rejected. It may have expired.'
+      : `GitHub returned ${me.status}.`);
+    const who=await me.json();
+    await gh(`/git/ref/heads/${encodeURIComponent(repo.branch)}`);
+    repoState={ok:true, login:who.login||'(token)', error:null};
+  }catch(e){ repoState={ok:false, error:e.message}; }
+  renderRepo();
+  maybeAutoSave();
+}
+// A long editing session should still get its daily save without a reload.
+setInterval(()=>maybeAutoSave(), 30*60*1000);
+
+function renderRepo(){
+  const card=$('repoCard');
+  if(!repo){
+    $('repoStats').innerHTML='';
+    $('repoBanner').innerHTML=`<div class="banner"><div>
+      <div class="banner-t">Not connected to a repository</div>
+      <div class="banner-d">Work is being kept in this browser only. Connect the repository so drafts are saved and publishing updates the site.</div>
+      </div></div>`;
+    $('repoNote').textContent='';
+    $('btnRepoSave').disabled=true; $('btnRepoLoad').disabled=true;
+    return;
+  }
+  $('btnRepoSave').disabled=false; $('btnRepoLoad').disabled=false;
+  const d=draftDiff();
+  const age=lastAutoSave?Math.floor((Date.now()-new Date(lastAutoSave))/86400000):null;
+  $('repoStats').innerHTML=[
+    ['Repository',repo.full.split('/')[1]],['Branch',repo.branch],
+    ['Unsaved changes',d.total],['Next version',version]]
+    .map(([l,v])=>`<div class="stat"><div class="stat-n" style="font-size:${typeof v==='string'?'14px':'24px'}">${typeof v==='number'?v.toLocaleString():esc(v)}</div><div class="stat-l">${l}</div></div>`).join('');
+  const bad=repoState&&!repoState.ok;
+  $('repoBanner').innerHTML=bad
+    ? `<div class="banner"><div><div class="banner-t">Cannot reach the repository</div>
+        <div class="banner-d">${esc(repoState.error||'')} — the draft is still safe in this browser. Reconnect to resume saving.</div></div>
+        <div class="banner-acts"><button class="btn" onclick="document.getElementById('btnRepoConnect').click()">Reconnect</button></div></div>`
+    : `<div class="banner clean"><div><div class="banner-t">Connected${repoState?.login?` as ${esc(repoState.login)}`:''}</div>
+        <div class="banner-d">${lastAutoSave
+          ? `Draft last saved to the repository ${new Date(lastAutoSave).toLocaleString()}${age>=2?` (${age} days ago)`:''}.`
+          : 'The draft has not been saved to the repository yet.'}
+          ${d.total?` ${d.total.toLocaleString()} change(s) not yet published.`:''}</div></div></div>`;
+  $('repoNote').textContent=d.total?'Saved automatically once a day.':'Nothing to save.';
+}
+
 function openEdit(key){
   editingKey=key; const isNew=key===null;
   const row=isNew?null:allRows().find(r=>r.__key===key); if(!isNew&&!row) return;
@@ -1302,14 +1596,14 @@ function renderFilters(){
 }
 function renderAll(){
   const has=master.length>0;
-  ['masterCard','draftCard','releaseCard','importCard','browseCard','vocabCard','exportCard'].forEach(id=>$(id).classList.toggle('hidden',!has));
+  ['masterCard','draftCard','repoCard','releaseCard','importCard','browseCard','vocabCard','exportCard'].forEach(id=>$(id).classList.toggle('hidden',!has));
   $('boot').classList.toggle('hidden',has);
   if(has){
     // A selected row can disappear - published, reverted, or removed - so prune
     // stale keys rather than letting a bulk action target something that is gone.
     if(selected.size){ const live=new Set(allRows().map(r=>r.__key));
       [...selected].forEach(k=>{ if(!live.has(k)) selected.delete(k); }); }
-    renderMaster(); renderDraft(); renderFilters(); renderTable(); renderVocab(); renderBulk(); renderExport();
+    renderMaster(); renderDraft(); renderRepo(); renderFilters(); renderTable(); renderVocab(); renderBulk(); renderExport();
   }
   const open=issues.filter(i=>resolved[i.id]!=='skipped').length;
   $('dbStatus').textContent=has?`${master.length.toLocaleString()} terms · ${Object.keys(staged).length} staged${open?` · ${open.toLocaleString()} issues`:''}`:'No master list';
@@ -1413,10 +1707,67 @@ $('btnResync').onclick=async()=>{
   alert(`Baseline replaced with ${rows.length.toLocaleString()} terms. The draft now matches it exactly.`);
 };
 
+$('btnRepoConnect').onclick=()=>{
+  $('repoFull').value=repo?.full||REPO_DEFAULTS.full;
+  $('repoBranch').value=repo?.branch||REPO_DEFAULTS.branch;
+  $('repoToken').value=repo?.token||'';
+  $('repoErr').classList.remove('show');
+  $('repoBg').classList.add('open');
+};
+$('repoCancel').onclick=()=>$('repoBg').classList.remove('open');
+$('repoBg').onclick=e=>{if(e.target===$('repoBg')) $('repoBg').classList.remove('open');};
+$('repoForget').onclick=async()=>{
+  if(!confirm('Disconnect from the repository?\n\nThe draft stays in this browser, but nothing will be saved or published until you reconnect.')) return;
+  repo=null; repoState=null; await idbSet('repo',null);
+  $('repoBg').classList.remove('open'); renderRepo();
+};
+$('repoTest').onclick=async()=>{
+  const full=$('repoFull').value.trim(), branch=$('repoBranch').value.trim()||'main',
+        token=$('repoToken').value.trim();
+  const err=$('repoErr');
+  if(!/^[\w.-]+\/[\w.-]+$/.test(full)){
+    err.innerHTML='<strong>Repository</strong> should look like <code>owner/repository</code>.';
+    err.classList.add('show'); return;
+  }
+  if(!token){ err.innerHTML='<strong>An access token is required.</strong>'; err.classList.add('show'); return; }
+  $('repoTest').disabled=true; $('repoTest').textContent='Checking…';
+  try{
+    await repoConnect(full,branch,token);
+    $('repoBg').classList.remove('open'); renderRepo();
+    if(confirm('Connected.\n\nLoad the glossary and any saved draft from the repository now?\n\nThis replaces what is currently in this browser.')){
+      const r=await repoLoad();
+      alert(`Loaded ${r.terms.toLocaleString()} terms${r.draft?' and a saved draft':''} from the repository.`);
+    }
+  }catch(e){
+    err.innerHTML=`<strong>Could not connect:</strong> ${esc(e.message)}`
+      +`<ul><li>Check the token has <strong>Contents: read and write</strong> on this repository.</li>`
+      +`<li>Check the resource owner is the account that owns it.</li>`
+      +`<li>Check the branch name.</li></ul>`;
+    err.classList.add('show');
+  }finally{ $('repoTest').disabled=false; $('repoTest').textContent='Check and save'; }
+};
+$('btnRepoSave').onclick=async()=>{
+  $('btnRepoSave').disabled=true; $('btnRepoSave').textContent='Saving…';
+  try{
+    const sha=await repoSaveDraft('saved by hand');
+    alert(sha?`Draft saved to the repository.\n\nCommit ${sha.slice(0,8)}.`:'There are no changes to save.');
+  }catch(e){ alert(`Could not save the draft.\n\n${e.message}`); }
+  finally{ $('btnRepoSave').disabled=false; $('btnRepoSave').textContent='Save draft now'; renderRepo(); }
+};
+$('btnRepoLoad').onclick=async()=>{
+  if(!confirm('Load the glossary and draft from the repository?\n\nEverything currently in this browser is replaced. Save the draft first if it is ahead.')) return;
+  $('btnRepoLoad').disabled=true; $('btnRepoLoad').textContent='Loading…';
+  try{
+    const r=await repoLoad();
+    alert(`Loaded ${r.terms.toLocaleString()} terms${r.draft?' and a saved draft':''}.`);
+  }catch(e){ alert(`Could not load from the repository.\n\n${e.message}`); }
+  finally{ $('btnRepoLoad').disabled=false; $('btnRepoLoad').textContent='Load from repository'; }
+};
+
 $('mCancel').onclick=closeModal; $('mSave').onclick=saveEdit;
 $('mRemove').onclick=stageRemove; $('mUnstage').onclick=unstage;
 $('modalBg').onclick=e=>{if(e.target===$('modalBg')) closeModal();};
-document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeModal();['issueBg','renBg','draftBg'].forEach(i=>$(i).classList.remove('open'));}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeModal();['issueBg','renBg','draftBg','repoBg'].forEach(i=>$(i).classList.remove('open'));}});
 
 $('btnExportChanges').onclick=exportChanges;
 $('btnExportFull').onclick=exportFull;
@@ -1448,8 +1799,12 @@ async function bootstrap(force){
         resolved=(await idbGet('resolved'))||{};
         fixCount=(await idbGet('fixCount'))||0;
         newCounter=(await idbGet('newCounter'))||1;
+        repo=(await idbGet('repo'))||null;
+        lastAutoSave=(await idbGet('lastAutoSave'))||null;
         if(!vocab.TermType.length) seedVocab();
-        renderAll(); return;
+        renderAll();
+        if(repo) verifyRepo();
+        return;
       }
     }
     const el=document.getElementById('baselineData');

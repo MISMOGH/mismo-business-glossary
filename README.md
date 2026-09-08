@@ -20,6 +20,7 @@ not share that project's data or design system.
 | Console | Working. Carries the full 8,397-term baseline embedded in the file. |
 | Data files | Extracted and validated. `data/glossary.json` holds all 8,397 terms. |
 | Hosting | Live on GitHub Pages. AWS not yet provisioned — see `docs/deployment.md`. |
+| Editing | The console reads and writes this repository. Publishing commits `data/glossary.json`; the draft saves daily to `.console/draft.json`. See `docs/console.md`. |
 
 ## Layout
 
@@ -29,8 +30,11 @@ data/
   glossary.json         all 8,397 terms, one per line
   reference.json        focus area / term type / source descriptions
 console/
-  index.html            management console (self-contained, opens from file://)
+  index.html            management console
+.console/
+  draft.json            work in progress, saved daily by the console
 docs/
+  console.md            running the console, one-time setup, recovery
   data-notes.md         data shape, known quirks, verified counts
   encoding.md           damaged characters, repair rules, platform test
   deployment.md         hosting plan and what AWS needs to provision
@@ -57,15 +61,20 @@ python3 -m http.server 8000
 # then open http://localhost:8000
 ```
 
-## Console storage — read this before moving the console anywhere
+## Console storage
 
-The console keeps its draft, vocabulary, staged edits and release history in
-**IndexedDB, which is scoped per origin**. A draft built up at
-`file:///C:/Users/you/Downloads/` will **not** appear when you open the same tool at
-`http://localhost:8000/` or at a hosted URL. Different origin, empty database.
+The console's working draft lives in **IndexedDB, scoped per origin**. A draft built up
+at `file:///C:/Users/you/Downloads/` will **not** appear at `http://localhost:8000/` or
+at a hosted URL — different origin, empty database.
 
-Before switching between local files, localhost and a hosted copy: use
-**Download backup**, then **Restore from backup** on the other side.
+Connecting the repository is what makes this safe: the draft is committed daily, so a
+new machine or a new URL can pick it up with **Load from repository**. Before the
+repository is connected, or to move an unsaved draft, use **Download backup** then
+**Restore from backup**.
+
+The console now needs to be served over HTTP rather than opened from disk, since it
+reads `data/glossary.json` from the repository. It still carries an embedded baseline
+as a fallback for working offline.
 
 ## Known work items
 
