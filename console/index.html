@@ -1994,22 +1994,6 @@ function drawTour(scroll, jump){
   // A step that just created its target has nothing to animate from.
   if(jump||step.demo){ spot.classList.add('jump'); card.classList.add('jump'); }
 
-  // A fixed-position target — a modal — is already where it is going to be, and
-  // scrolling the page under it only moves everything else.
-  const fixed=el && getComputedStyle(el.closest('.modal-bg')||el).position==='fixed';
-  if(el && scroll && !fixed){
-    const r=el.getBoundingClientRect();
-    // A tall target centred leaves too little room above or below for the card,
-    // and none beside it if it is also wide — so it is aligned to the top
-    // instead, which frees the space underneath.
-    const tall=r.height>innerHeight*0.38;
-    if(tall||r.top<90||r.bottom>innerHeight-90)
-      // Instant for a revealed target: a smooth scroll running underneath a
-      // spotlight that is also moving is what made this step feel snagged.
-      el.scrollIntoView({behavior:(jump||step.demo)?'auto':'smooth',
-                         block:tall?'start':'center'});
-  }
-
   if(scroll){
     card.innerHTML=`<div class="tour-step">Step ${tourAt+1} of ${tourSteps.length}</div>
       <h3>${esc(step.title)}</h3>${step.body}
@@ -2023,6 +2007,37 @@ function drawTour(scroll, jump){
     if($('tourBack')) $('tourBack').onclick=()=>tourGo(-1);
       card.querySelectorAll('[data-tdot]').forEach(dd=>dd.onclick=()=>tourMove(+dd.dataset.tdot));
   }
+
+  /* Deliberately after the card is written: the scroll below is calculated from
+     the card's height, and measuring it before its content existed used the
+     previous step's height — which is why a step whose card was taller than the
+     last one still landed on top of its target. */
+  // A fixed-position target — a modal — is already where it is going to be, and
+  // scrolling the page under it only moves everything else.
+  const fixed=el && getComputedStyle(el.closest('.modal-bg')||el).position==='fixed';
+  if(el && scroll && !fixed){
+    const r0=el.getBoundingClientRect();
+    const w=352, gap=18, margin=16;
+    const noSideRoom = (innerWidth-r0.right-margin < w) && (r0.left-margin < w);
+    const h=card.offsetHeight||330;
+    if(noSideRoom && h+gap+r0.height+margin*2 <= innerHeight){
+      /* Wide target, and both it and the card fit on one screen: scroll so the
+         target sits exactly far enough down for the card to go above it, and
+         nothing needs scrolling to be read. */
+      const want=h+gap+margin;
+      scrollBy({top:r0.top-want, behavior:'auto'});
+    }else{
+      // A tall target centred leaves too little room above or below, so it is
+      // aligned to the top instead, which frees the space underneath.
+      const tall=r0.height>innerHeight*0.38;
+      if(tall||r0.top<90||r0.bottom>innerHeight-90)
+        // Instant for a revealed target: a smooth scroll running underneath a
+        // spotlight that is also moving is what made this step feel snagged.
+        el.scrollIntoView({behavior:(jump||step.demo)?'auto':'smooth',
+                           block:tall?'start':'center'});
+    }
+  }
+
 
   const place=()=>{
     if(!el){
@@ -2049,10 +2064,12 @@ function drawTour(scroll, jump){
     if(spaceRight>=w)      left=Math.min(r.right+gap, innerWidth-w-16);
     else if(spaceLeft>=w)  left=Math.max(16, r.left-gap-w);
     else{
-      // No room beside: go under, then over, and only overlap as a last resort.
+      /* No room beside. Above is tried first: the scroll above has already made
+         space there when both fit, and a card above reads as introducing the
+         thing below it rather than trailing after it. */
       left=Math.min(Math.max(16,r.left), innerWidth-w-16);
-      if(r.bottom+gap+h<=innerHeight-16)   top=r.bottom+gap;
-      else if(r.top-gap-h>=16)             top=r.top-gap-h;
+      if(r.top-gap-h>=16)                  top=r.top-gap-h;
+      else if(r.bottom+gap+h<=innerHeight-16) top=r.bottom+gap;
       else                                 top=Math.max(16, innerHeight-h-16);
     }
     card.style.left=`${left}px`; card.style.top=`${top}px`;
