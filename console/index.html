@@ -294,6 +294,10 @@
     transition:top .28s cubic-bezier(.4,0,.2,1), left .28s cubic-bezier(.4,0,.2,1),
                width .28s cubic-bezier(.4,0,.2,1), height .28s cubic-bezier(.4,0,.2,1);}
   .tour-spot.center{box-shadow:0 0 0 9999px rgba(16,27,51,.62);}
+  /* Wider when it has to sit above or below a full-width panel: the same text
+     in 520px is about a third shorter, which is often the difference between
+     both fitting on a laptop screen and not. */
+  .tour-card.wide{width:520px;}
   .tour-card{position:fixed; z-index:2001; width:352px; max-width:calc(100vw - 32px);
     background:var(--card); border-radius:14px; padding:18px 19px 15px;
     box-shadow:0 18px 48px rgba(16,27,51,.28); transition:top .28s cubic-bezier(.4,0,.2,1),
@@ -313,10 +317,15 @@
   .tour-dot.on{background:var(--brand); transform:scale(1.25);}
   .tour-dot.done{background:#B6CBE2;}
     .tour-skip{position:fixed; top:16px; left:18px; z-index:2012;}
+  .tour-skip.right{left:auto; right:18px;}
   .tour-card{z-index:2010;}
   /* A modal being demonstrated has to sit above the dimming shadow but below
      the tour card, or the step explaining it is hidden behind it. */
   .modal-bg.tour-lift{z-index:2005;}
+  /* Narrowed only while the tour is explaining it: on a 1280px laptop the
+     full-width form leaves 244px either side, which is not enough for the card
+     and forces it on top of the very thing being shown. */
+  .modal-bg.tour-lift .modal{max-width:600px;}
   @media (prefers-reduced-motion:reduce){ .tour-spot,.tour-card{transition:none;} }
 
   /* ---- hover tooltip ---- */
@@ -2017,8 +2026,8 @@ function drawTour(scroll, jump){
   const fixed=el && getComputedStyle(el.closest('.modal-bg')||el).position==='fixed';
   if(el && scroll && !fixed){
     const r0=el.getBoundingClientRect();
-    const w=352, gap=18, margin=16;
-    const noSideRoom = (innerWidth-r0.right-margin < w) && (r0.left-margin < w);
+    const gap=18, margin=16, MIN=248;
+    const noSideRoom = (innerWidth-r0.right-margin < MIN+gap) && (r0.left-margin < MIN+gap);
     const h=card.offsetHeight||330;
     if(noSideRoom && h+gap+r0.height+margin*2 <= innerHeight){
       /* Wide target, and both it and the card fit on one screen: scroll so the
@@ -2026,6 +2035,10 @@ function drawTour(scroll, jump){
          nothing needs scrolling to be read. */
       const want=h+gap+margin;
       scrollBy({top:r0.top-want, behavior:'auto'});
+    }else if(noSideRoom){
+      // Too tall to fit alongside the card: align it to the top so as much as
+      // possible is visible above the card.
+      scrollBy({top:r0.top-margin, behavior:'auto'});
     }else{
       // A tall target centred leaves too little room above or below, so it is
       // aligned to the top instead, which frees the space underneath.
@@ -2041,38 +2054,58 @@ function drawTour(scroll, jump){
 
   const place=()=>{
     if(!el){
+      card.classList.remove('wide'); card.style.width='';
       spot.className='tour-spot center';
       spot.style.top=`${innerHeight/2}px`; spot.style.left=`${innerWidth/2}px`;
       spot.style.width='0px'; spot.style.height='0px';
       card.style.top=`${Math.max(16,(innerHeight-card.offsetHeight)/2)}px`;
-      card.style.left=`${Math.max(16,(innerWidth-352)/2)}px`;
+      card.style.left=`${Math.max(16,(innerWidth-card.offsetWidth)/2)}px`;
       return;
     }
-    const r=el.getBoundingClientRect(), pad=8, w=352, gap=18;
+    const r=el.getBoundingClientRect(), pad=8, gap=18, margin=16;
+    const IDEAL=352, MIN=248;
+    const roomRight=innerWidth-r.right-margin, roomLeft=r.left-margin;
+
+    /* The card narrows to fit a gutter rather than giving up on the space. On a
+       laptop the column beside a full-width panel is around 290px — too little
+       for the usual width, plenty for a narrower card, and using it is far
+       better than putting the card on top of what it describes. */
+    const fitR=roomRight>=MIN+gap, fitL=roomLeft>=MIN+gap;
+    const beside=fitR||fitL;
+    card.classList.toggle('wide', !beside);
+    card.style.width = beside
+      ? `${Math.min(IDEAL, (fitR?roomRight:roomLeft)-gap)}px`
+      : '';
+
+    const h=card.offsetHeight||300, w=card.offsetWidth||IDEAL;
+    let left, top, spotH=r.height;
+
+    if(beside){
+      left = fitR ? Math.min(r.right+gap, innerWidth-w-margin)
+                  : Math.max(margin, r.left-gap-w);
+      top  = Math.min(Math.max(margin, r.top-10), Math.max(margin, innerHeight-h-margin));
+    }else{
+      left=Math.min(Math.max(margin,r.left), innerWidth-w-margin);
+      if(r.top-gap-h>=margin)                      top=r.top-gap-h;
+      else if(r.bottom+gap+h<=innerHeight-margin)  top=r.bottom+gap;
+      else{
+        /* Neither fits whole. The spotlight is clipped to what is left and the
+           card sits under it, so the card never covers the highlighted part. */
+        const avail=Math.max(150, innerHeight-h-gap-margin*2);
+        top=margin+avail+gap;
+        spotH=Math.min(r.height, avail);
+      }
+    }
     spot.className='tour-spot';
     spot.style.top=`${r.top-pad}px`;
     spot.style.left=`${r.left-pad}px`;
     spot.style.width=`${r.width+pad*2}px`;
-    spot.style.height=`${r.height+pad*2}px`;
-    /* Measure the gutters rather than assuming the preferred gap fits. A target
-       as wide as the edit form leaves 370px either side — enough for the card,
-       but not enough for the card plus a gap, and the earlier logic read that
-       as "no room" and dropped the card on top of the thing it was describing. */
-    const h=card.offsetHeight||300;
-    const spaceRight=innerWidth-r.right-16, spaceLeft=r.left-16;
-    let left, top=Math.min(Math.max(16, r.top-10), Math.max(16, innerHeight-h-16));
-    if(spaceRight>=w)      left=Math.min(r.right+gap, innerWidth-w-16);
-    else if(spaceLeft>=w)  left=Math.max(16, r.left-gap-w);
-    else{
-      /* No room beside. Above is tried first: the scroll above has already made
-         space there when both fit, and a card above reads as introducing the
-         thing below it rather than trailing after it. */
-      left=Math.min(Math.max(16,r.left), innerWidth-w-16);
-      if(r.top-gap-h>=16)                  top=r.top-gap-h;
-      else if(r.bottom+gap+h<=innerHeight-16) top=r.bottom+gap;
-      else                                 top=Math.max(16, innerHeight-h-16);
-    }
+    spot.style.height=`${spotH+pad*2}px`;
     card.style.left=`${left}px`; card.style.top=`${top}px`;
+    // Close tour sits top-left; when the card lands there too it covers the
+    // step number, so the button moves to the other corner.
+    const skip=$('tourSkip');
+    if(skip) skip.classList.toggle('right', top<70 && left<300);
   };
 
   place();
