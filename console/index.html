@@ -779,7 +779,16 @@ function renderIssues(){
     return `<div class="igroup"><div class="ighead">
       <div><div class="ightitle">${esc(m.title)} <span class="chip ${m.severity==='error'?'err':'warnc'}">${list.length}</span></div>
       <div class="igdesc">${esc(m.desc)}</div></div>
-      <div class="sp">${fixable.length?`<button class="btn sm warn" data-fixall="${type}">Approve all ${fixable.length}</button>`:''}</div>
+      <div class="sp">${fixable.length?`<button class="btn sm warn" data-fixall="${type}">Approve all ${fixable.length}</button>`:''}${
+        // A vocabulary that has drifted from the terms produces one row per term
+        // — 252 of them for a single missing value. Adding the value once fixes
+        // every one, so offer it at the group rather than per row.
+        type==='off-vocab'?(()=>{
+          const miss={};
+          list.forEach(i=>(i.bad||[]).forEach(v=>{ (miss[i.field]=miss[i.field]||new Set()).add(v); }));
+          const total=Object.values(miss).reduce((n,set)=>n+set.size,0);
+          return total?`<button class="btn sm" data-addallvocab="1" title="${esc(Object.entries(miss).map(([f,set])=>`${vfield(f).label}: ${[...set].join(', ')}`).join(' · '))}">Add ${total} missing value${total===1?'':'s'} to the lists</button>`:'';
+        })():''}</div>
       </div><div class="ilist">${list.map(renderIssueRow).join('')}</div></div>`;
   }).join(''):`<div class="empty">${q?'No issues match that filter.':'No outstanding issues.'}</div>`;
 }
@@ -2521,6 +2530,24 @@ $('issueGroups').onclick=e=>{
     const [field,val]=ud.dataset.undodel.split('|');
     const p=vocabPending.find(x=>x.field===field&&x.op==='delete'&&x.from===val);
     if(p) unstageVocab(p.id);
+  }
+  const aa=e.target.closest('[data-addallvocab]');
+  if(aa){
+    detectIssues();
+    const miss={};
+    issues.filter(i=>i.type==='off-vocab'&&!resolved[i.id])
+      .forEach(i=>(i.bad||[]).forEach(v=>{ (miss[i.field]=miss[i.field]||new Set()).add(v); }));
+    const lines=Object.entries(miss).map(([f,set])=>`${vfield(f).label}: ${[...set].join(', ')}`);
+    const total=Object.values(miss).reduce((n,set)=>n+set.size,0);
+    if(!total){ alert('There are no missing values to add.'); return; }
+    if(confirm(`Add ${total} value(s) to the controlled lists?\n\n${lines.join('\n')}\n\n`
+      +`These are already carried by terms in the glossary. Adding them is staged for `
+      +`review like any other classification change.\n\n`
+      +`If a value is a mistake rather than a legitimate classification, rename or correct `
+      +`it instead — adding it makes the mistake official.`)){
+      Object.entries(miss).forEach(([f,set])=>set.forEach(v=>vocabAdd(f,v)));
+    }
+    return;
   }
   if(av){
     const [field,val]=av.dataset.addvocab.split('|');
