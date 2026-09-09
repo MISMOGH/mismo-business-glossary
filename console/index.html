@@ -699,9 +699,12 @@ const ISSUE_RULES=[
    desc:'No term type recorded. The correct value cannot be inferred, so this needs a decision.',
    fields:['TermType'], detect:v=>v.trim()==='', fix:null},
   {type:'off-vocab',severity:'error',title:'Value outside the vocabulary',
-   desc:'Not in the controlled list. Correct the term, or add the value under Vocabulary.',
+   desc:'This term carries a classification that is not in the controlled list, so nothing can filter or report on it reliably. Either correct the term, or add the value to the list if it is legitimate.',
    fields:['TermType','FocusArea','Source'],
-   detect:(v,row,key)=>{const f=vfield(key); return f?cellValues(row,f).some(x=>!vocab[key].includes(x)):false;},
+   // Reads the effective list, so a value whose addition is staged does not get
+   // reported as unknown while it waits to be applied.
+   detect:(v,row,key)=>{const f=vfield(key);
+     return f?cellValues(row,f).some(x=>!effectiveVocab(key).includes(x)):false;},
    fix:null}
 ];
 const issueMeta=t=>ISSUE_RULES.find(r=>r.type===t)
@@ -716,8 +719,16 @@ function detectIssues(){
       if(!hit) return;
       const after=rule.fix?rule.fix(v):null;
       if(rule.fix&&after===v) return;
+      // For an off-vocabulary hit, which value is the problem is the whole
+      // question. Showing the raw pipe-delimited field left the reader to work
+      // it out against a list of seventeen.
+      let bad=null;
+      if(rule.type==='off-vocab'){
+        const f=vfield(key), known=effectiveVocab(key);
+        bad=cellValues(row,f).filter(x=>!known.includes(x));
+      }
       found.push({id:`${rule.type}:${row.ID||ri}:${key}`,type:rule.type,severity:rule.severity,
-        rowId:row.ID,rowIndex:ri,term:row.Term,field:key,before:v,after,fixable:!!rule.fix});
+        rowId:row.ID,rowIndex:ri,term:row.Term,field:key,before:v,after,fixable:!!rule.fix,bad});
     }));
   });
   const seen=new Map();
@@ -761,11 +772,18 @@ function renderIssueRow(i){
   return `<div class="irow ${st?'done':''}"><div class="imain">
     <div class="iterm">${esc(String(i.term||'(untitled)').slice(0,80))} <span class="ifield">· ${esc(i.field)}</span></div>
     ${i.fixable?`<div class="diff"><span class="b">${dot(String(i.before).slice(0,180))}</span> → <span class="a">${dot(String(i.after).slice(0,180))}</span></div>`
+               :i.bad&&i.bad.length?`<div class="diff">${
+                   cellValues({[i.field]:i.before},vfield(i.field)).map(v=>
+                     i.bad.includes(v)?`<span class="b" title="Not in the ${esc(vfield(i.field).label.toLowerCase())} list">${esc(v)}</span>`
+                                      :`<span style="color:var(--ink-soft)">${esc(v)}</span>`).join('<span style="color:var(--ink-faint)"> · </span>')
+                 } — <strong>${i.bad.map(esc).join(', ')}</strong> ${i.bad.length===1?'is':'are'} not in the list</div>`
                :`<div class="diff">${esc(String(i.before).slice(0,180))||'<em>(empty)</em>'}${i.note?` — ${esc(i.note)}`:''}</div>`}
     </div><div class="iacts">
     ${st?`<span class="manual">skipped</span><button class="btn sm" data-skip="${esc(i.id)}">Undo</button>`
         :i.fixable?`<button class="btn sm ok" data-fix="${esc(i.id)}">Approve</button><button class="btn sm" data-skip="${esc(i.id)}">Skip</button>`
-                  :`<span class="manual">manual</span><button class="btn sm" data-edit2="${esc(i.rowId)}">Edit</button><button class="btn sm" data-skip="${esc(i.id)}">Skip</button>`}
+                  :`<span class="manual">manual</span>${
+                      i.bad&&i.bad.length===1?`<button class="btn sm" data-addvocab="${esc(i.field)}|${esc(i.bad[0])}" title="Stage adding this value to the controlled list">Add to list</button>`:''
+                    }<button class="btn sm" data-edit2="${esc(i.rowId)}">Edit</button><button class="btn sm" data-skip="${esc(i.id)}">Skip</button>`}
     </div></div>`;
 }
 /* Correcting a governed field has to correct the vocabulary with it. Term type,
@@ -2343,11 +2361,21 @@ $('vNew').addEventListener('keydown',e=>{if(e.key==='Enter'){vocabAdd(vTab,$('vN
 
 $('issueGroups').onclick=e=>{
   const fx=e.target.closest('[data-fix]'),sk=e.target.closest('[data-skip]'),
-        fa=e.target.closest('[data-fixall]'),ed=e.target.closest('[data-edit2]');
+        fa=e.target.closest('[data-fixall]'),ed=e.target.closest('[data-edit2]'),
+        av=e.target.closest('[data-addvocab]');
   if(fx) applyFix(fx.dataset.fix);
   if(sk) skipIssue(sk.dataset.skip);
   if(fa) applyAll(fa.dataset.fixall);
   if(ed){$('issueBg').classList.remove('open'); openEdit(ed.dataset.edit2);}
+  if(av){
+    const [field,val]=av.dataset.addvocab.split('|');
+    const f=vfield(field);
+    const n=master.filter(r=>cellValues(r,f).includes(val)).length;
+    if(confirm(`Add "${val}" to ${f.label.toLowerCase()}?\n\n`
+      +`${n.toLocaleString()} term(s) already carry it. This is staged for review `
+      +`like any other classification change, and resolves the issue for all of them.`))
+      vocabAdd(field,val);
+  }
 };
 $('iq').addEventListener('input',e=>{issueFilter=e.target.value;renderIssues();});
 $('iClose').onclick=()=>$('issueBg').classList.remove('open');
