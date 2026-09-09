@@ -1780,12 +1780,20 @@ async function applyStaged(){
    novelty is left out. */
 let ttsOn=false, ttsVoice=null, ttsVoices=[];
 
+/* Libby first by request. She is one of Microsoft's neural voices, exposed to
+   the browser as "Microsoft Libby Online (Natural)" — markedly better than the
+   older built-in voices, but only in Edge, and only with a network connection,
+   since the audio is synthesised remotely. Everything else is a fallback for
+   browsers and machines that do not have her. */
 const TTS_PREFER=[            // best first, matched loosely against voice names
+  'Libby','Sonia','Maisie','Ryan','Thomas',                  // en-GB neural, Edge
   'Google UK English Female','Google UK English Male',
-  'Microsoft Hazel','Microsoft Susan','Microsoft George','Microsoft Ryan','Microsoft Sonia',
-  'Daniel','Serena','Kate','Oliver','Libby',
+  'Microsoft Hazel','Microsoft Susan','Microsoft George',
+  'Daniel','Serena','Kate','Oliver',
+  'Aria','Jenny','Guy',                                      // en-US neural
   'Google US English','Microsoft Zira','Microsoft David','Samantha','Alex'
 ];
+const TTS_NATURAL=/online \(natural\)|neural/i;
 const TTS_SKIP=/albert|bad news|bahh|bells|boing|bubbles|cellos|deranged|good news|jester|organ|superstar|trinoids|whisper|wobble|zarvox|junior|ralph|fred|grandma|grandpa|rocko|shelley|sandy|eddy|flo|reed|rishi/i;
 
 function ttsList(){
@@ -1793,7 +1801,9 @@ function ttsList(){
     .filter(v=>/^en(-|_|$)/i.test(v.lang) && !TTS_SKIP.test(v.name));
   const score=v=>{
     const i=TTS_PREFER.findIndex(p=>v.name.toLowerCase().includes(p.toLowerCase()));
-    return (i<0?99:i) + (/^en-GB/i.test(v.lang)?0:50);   // British first
+    return (i<0?99:i)
+      + (/^en-GB/i.test(v.lang)?0:60)        // British first
+      - (TTS_NATURAL.test(v.name)?40:0);     // a neural voice beats a built-in one
   };
   return all.sort((a,b)=>score(a)-score(b)||a.name.localeCompare(b.name));
 }
@@ -1820,6 +1830,22 @@ function ttsSpeak(title, html){
   const text=(title+'. '+tmp.textContent).replace(/\s+/g,' ').trim();
   const u=new SpeechSynthesisUtterance(text);
   u.voice=ttsVoice; u.rate=0.95; u.pitch=1; u.volume=1;
+  /* A neural voice is synthesised remotely, so it fails when the network does.
+     Falling back to a local voice keeps the narration working rather than
+     leaving it mysteriously silent. */
+  u.onerror=e=>{
+    if(e.error==='canceled'||e.error==='interrupted') return;
+    const local=ttsVoices.find(v=>!TTS_NATURAL.test(v.name) && v!==ttsVoice);
+    if(local && ttsVoice!==local){
+      ttsVoice=local; idbSet('ttsVoice',local.name);
+      const again=new SpeechSynthesisUtterance(text);
+      again.voice=local; again.rate=0.95;
+      speechSynthesis.speak(again);
+      // The picker is updated in place rather than by re-rendering the card,
+      // which would start the step over and speak it a second time.
+      const pick=$('ttsPick'); if(pick) pick.value=local.name;
+    }
+  };
   speechSynthesis.speak(u);
 }
 const ttsStop=()=>{ if('speechSynthesis' in window) speechSynthesis.cancel(); };
@@ -1829,10 +1855,19 @@ function ttsControls(){
   return `<div class="tour-audio">
     <button id="ttsToggle" class="${ttsOn?'on':''}" title="${ttsOn?'Stop reading the steps aloud':'Read the steps aloud'}">
       ${ttsOn?'🔊 Reading aloud':'🔈 Read aloud'}</button>
-    <select id="ttsPick" title="Voices come from this computer">${ttsVoices.map(v=>
-      `<option value="${esc(v.name)}"${v===ttsVoice?' selected':''}>${esc(v.name.replace(/^Microsoft |^Google /,''))}${/^en-GB/i.test(v.lang)?' (UK)':''}</option>`).join('')}</select>
+    <select id="ttsPick" title="Voices come from this browser and computer">${ttsVoices.map(v=>{
+      const short=v.name.replace(/^Microsoft |^Google /,'')
+                        .replace(/\s*Online \(Natural\)\s*/i,'')
+                        .replace(/\s*-\s*English.*$/i,'').trim();
+      const tags=[/^en-GB/i.test(v.lang)?'UK':'US', TTS_NATURAL.test(v.name)?'natural':null]
+                 .filter(Boolean).join(', ');
+      return `<option value="${esc(v.name)}"${v===ttsVoice?' selected':''}>${esc(short)} (${tags})</option>`;
+    }).join('')}</select>
     <button class="sp" id="ttsTry" title="Hear this voice">Preview</button>
-  </div>`;
+  </div>${ttsVoices.some(v=>TTS_NATURAL.test(v.name))?'':
+    `<p class="drhint" style="margin:-4px 0 10px;">Only this computer's built-in voices are available.
+      The natural-sounding ones, including Libby, come with <strong>Microsoft Edge</strong> and need a
+      network connection.</p>`}`;
 }
 
 function ttsWire(step){
