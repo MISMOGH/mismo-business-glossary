@@ -318,16 +318,8 @@
   .tour-dot.done{background:#B6CBE2;}
     .tour-skip{position:fixed; top:16px; left:18px; z-index:2012;}
   .tour-skip.right{left:auto; right:18px;}
-  .tour-audio{display:flex; align-items:center; gap:6px; margin:0 0 10px;}
-  .tour-audio button{font-family:inherit; font-size:11.5px; font-weight:600; cursor:pointer;
-    border:1px solid var(--line); background:var(--card); color:var(--ink-soft);
-    border-radius:999px; padding:3px 10px; display:inline-flex; align-items:center; gap:5px;}
-  .tour-audio button:hover{border-color:var(--brand); color:var(--brand-text);}
-  .tour-audio button.on{background:var(--brand-soft); border-color:var(--brand);
-    color:var(--brand-text);}
-  .tour-audio select{font-family:inherit; font-size:11.5px; padding:3px 6px; max-width:150px;
-    border:1px solid var(--line); border-radius:7px; background:var(--card); color:var(--ink-soft);}
-  .tour-audio .sp{margin-left:auto;}
+  .tour-mute{position:fixed; top:16px; left:126px; z-index:2012; padding:6px 10px; line-height:1;}
+  .tour-mute.right{left:auto; right:126px;}
   .tour-card{z-index:2010;}
   /* A modal being demonstrated has to sit above the dimming shadow but below
      the tour card, or the step explaining it is hidden behind it. */
@@ -1785,13 +1777,12 @@ let ttsOn=false, ttsVoice=null, ttsVoices=[];
    step would immediately jump forward again. */
 let ttsSeq=0, ttsNext=null;
 
-/* Andrew Multilingual first by choice. Like the other neural voices he is
-   exposed only by Microsoft Edge and synthesised remotely, so he needs a
-   network connection. Everything below him is a fallback for browsers and
-   machines that do not have him. */
+/* Sonia first by choice. Like the other neural voices she is exposed only by
+   Microsoft Edge and synthesised remotely, so she needs a network connection.
+   Everything below her is a fallback for browsers and machines without her. */
 const TTS_PREFER=[            // best first, matched loosely against voice names
-  'Andrew Multilingual','Andrew',                            // chosen default
-  'Libby','Sonia','Maisie','Ryan','Thomas',                  // en-GB neural, Edge
+  'Sonia',                                                   // chosen default
+  'Libby','Maisie','Ryan','Thomas','Andrew Multilingual',    // en-GB neural, Edge
   'Aria','Jenny','Guy','Brian','Emma',                       // en-US neural
   'Google UK English Female','Google UK English Male',
   'Microsoft Hazel','Microsoft Susan','Microsoft George',
@@ -1825,7 +1816,8 @@ async function ttsInit(){
   }
   const saved=await idbGet('ttsVoice');
   ttsVoice=ttsVoices.find(v=>v.name===saved) || ttsVoices[0] || null;
-  ttsOn=!!(await idbGet('ttsOn'));
+  const saved_on=await idbGet('ttsOn');
+  ttsOn = saved_on===undefined||saved_on===null ? !!ttsVoice : !!saved_on;
 }
 
 /* Read the step aloud from its text, not its markup: the body is HTML, and a
@@ -1871,39 +1863,28 @@ const ttsStop=()=>{
   if('speechSynthesis' in window) speechSynthesis.cancel();
 };
 
-function ttsControls(){
-  if(!('speechSynthesis' in window)||!ttsVoices.length) return '';
-  return `<div class="tour-audio">
-    <button id="ttsToggle" class="${ttsOn?'on':''}" title="${ttsOn?'Stop reading the steps aloud':'Read the steps aloud'}">
-      ${ttsOn?'🔊 Reading aloud':'🔈 Read aloud'}</button>
-    ${ttsOn?`<span style="font-size:11px; color:var(--ink-faint);">moves on by itself</span>`:''}
-    <select id="ttsPick" title="Voices come from this browser and computer">${ttsVoices.map(v=>{
-      const short=v.name.replace(/^Microsoft |^Google /,'')
-                        .replace(/\s*Online \(Natural\)\s*/i,'')
-                        .replace(/\s*-\s*English.*$/i,'').trim();
-      const tags=[/^en-GB/i.test(v.lang)?'UK':'US', TTS_NATURAL.test(v.name)?'natural':null]
-                 .filter(Boolean).join(', ');
-      return `<option value="${esc(v.name)}"${v===ttsVoice?' selected':''}>${esc(short)} (${tags})</option>`;
-    }).join('')}</select>
-  </div>${ttsVoices.some(v=>TTS_NATURAL.test(v.name))?'':
-    `<p class="drhint" style="margin:-4px 0 10px;">Only this computer's built-in voices are available.
-      The natural-sounding ones, including Libby, come with <strong>Microsoft Edge</strong> and need a
-      network connection.</p>`}`;
-}
 
+/* The voice is settled, so there is no picker on the step card — that was a
+   decision to make once, not something to look at on every step. What remains
+   is a mute button beside Close tour: a tour that reads aloud with no way to
+   silence it is worse than one that stays quiet. */
 function ttsWire(step){
-  const t=$('ttsToggle'); if(!t) return;
+  const t=$('tourMute'); if(!t) return;
+  const label=v=>v?v.name.replace(/^Microsoft |^Google /,'')
+                        .replace(/\s*Online \(Natural\).*/i,'')
+                        .replace(/\s*-\s*English.*$/i,'').trim():'';
+  const paint=()=>{
+    t.textContent = ttsOn?'🔊':'🔇';
+    t.title = !ttsVoice ? 'No speech voice is available in this browser'
+      : ttsOn ? `Reading aloud in ${label(ttsVoice)}, moving on when each step finishes — click to silence`
+              : 'Read the steps aloud, moving on when each finishes';
+  };
+  paint();
   t.onclick=async()=>{
     ttsOn=!ttsOn; await idbSet('ttsOn',ttsOn);
     ttsStop();
+    paint();                       // repainted here: drawTour(false) leaves the card alone
     if(ttsOn) ttsSpeak(step.title, step.body);
-    drawTour(false);
-  };
-  $('ttsPick').onchange=async e=>{
-    ttsVoice=ttsVoices.find(v=>v.name===e.target.value)||ttsVoice;
-    await idbSet('ttsVoice', ttsVoice?.name||null);
-    ttsStop();
-    if(tourOn) ttsSpeak(step.title, step.body);
   };
 }
 
@@ -2097,11 +2078,12 @@ async function startTour(){
   if(!$('tourSpot')){
     document.body.insertAdjacentHTML('beforeend',
       `<div class="tour-spot" id="tourSpot"></div><div class="tour-card" id="tourCard"></div>
+       <button class="btn sm tour-mute" id="tourMute" title="Reading aloud">🔊</button>
        <button class="btn sm tour-skip" id="tourSkip">Close tour</button>`);
     $('tourSkip').onclick=endTour;
   }
   document.body.classList.add('tour-running');
-  ['tourSpot','tourCard','tourSkip'].forEach(id=>$(id).style.display='');
+  ['tourSpot','tourCard','tourSkip','tourMute'].forEach(id=>$(id).style.display='');
   tourEnter(tourSteps[0]);
   drawTour(true);
   addEventListener('resize',tourReflow);
@@ -2114,7 +2096,7 @@ function endTour(){
   tourExit();
   document.body.classList.remove('tour-running');
   tourOn=false;
-  ['tourSpot','tourCard','tourSkip'].forEach(id=>{const e=$(id); if(e) e.style.display='none';});
+  ['tourSpot','tourCard','tourSkip','tourMute'].forEach(id=>{const e=$(id); if(e) e.style.display='none';});
   removeEventListener('resize',tourReflow);
   removeEventListener('scroll',tourReflow,true);
   document.removeEventListener('keydown',tourKeys);
@@ -2154,7 +2136,7 @@ function drawTour(scroll, jump){
 
   if(scroll){
     card.innerHTML=`<div class="tour-step">Step ${tourAt+1} of ${tourSteps.length}</div>
-      <h3>${esc(step.title)}</h3>${ttsControls()}${step.body}
+      <h3>${esc(step.title)}</h3>${step.body}
       <div class="tour-foot">
         <span class="tour-dots">${tourSteps.map((_,i)=>
           `<span class="tour-dot ${i===tourAt?'on':i<tourAt?'done':''}" data-tdot="${i}"></span>`).join('')}</span>
@@ -2255,8 +2237,10 @@ function drawTour(scroll, jump){
     card.style.left=`${left}px`; card.style.top=`${top}px`;
     // Close tour sits top-left; when the card lands there too it covers the
     // step number, so the button moves to the other corner.
-    const skip=$('tourSkip');
-    if(skip) skip.classList.toggle('right', top<70 && left<300);
+    const away = top<70 && left<300;
+    const skip=$('tourSkip'), mute=$('tourMute');
+    if(skip) skip.classList.toggle('right', away);
+    if(mute) mute.classList.toggle('right', away);
   };
 
   place();
