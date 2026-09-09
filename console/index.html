@@ -2259,6 +2259,13 @@ function renderAll(){
     if(selected.size){ const live=new Set(allRows().map(r=>r.__key));
       [...selected].forEach(k=>{ if(!live.has(k)) selected.delete(k); }); }
     renderRail(); renderFilters(); renderTable(); renderVocab(); renderBulk(); renderExport();
+  // An open modal is showing the same data and must not be left behind. Reverting
+  // a draft change updated the counts underneath while the list on screen kept
+  // the reverted row and a live button, so the action looked as though it had
+  // failed. Refreshing here covers every path that mutates state, rather than
+  // each caller having to remember.
+  if($('draftBg')?.classList.contains('open')) renderDraftModal();
+  if($('issueBg')?.classList.contains('open')) renderIssues();
   }
   const open=issues.filter(i=>resolved[i.id]!=='skipped').length;
   $('dbStatus').textContent=has?`${master.length.toLocaleString()} terms · ${Object.keys(staged).length} staged${open?` · ${open.toLocaleString()} issues`:''}`:'No master list';
