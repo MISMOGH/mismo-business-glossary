@@ -105,6 +105,21 @@
   .vtabs{display:inline-flex; background:var(--paper); border-radius:999px; padding:4px; gap:2px; margin-bottom:14px; flex-wrap:wrap;}
   .vtab{background:none; border:none; padding:8px 16px; border-radius:999px; font-weight:600; font-size:13px; color:var(--ink-soft);}
   .vtab.on{background:var(--card); color:var(--ink); box-shadow:0 1px 3px rgba(16,27,51,.12);}
+
+  /* ---- segmented filter, same shape language as the vocabulary tabs ---- */
+  .seg{display:inline-flex; background:var(--paper); border:1px solid var(--line);
+       border-radius:999px; padding:4px; gap:2px; margin:16px 0 0; flex-wrap:wrap;}
+  .seg button{background:none; border:none; font-family:inherit; cursor:pointer;
+       padding:6px 14px; border-radius:999px; font-weight:600; font-size:12.5px;
+       color:var(--ink-soft); display:inline-flex; align-items:center; gap:7px;
+       transition:background .12s ease, color .12s ease;}
+  .seg button:hover:not(:disabled):not(.on){background:rgba(16,27,51,.045); color:var(--ink);}
+  .seg button.on{background:var(--card); color:var(--ink); box-shadow:0 1px 3px rgba(16,27,51,.12);}
+  .seg button:disabled{color:#B4BAC8; cursor:default;}
+  .seg .n{font-size:10.5px; font-weight:700; padding:1px 7px; border-radius:999px;
+       background:rgba(16,27,51,.07); color:var(--ink-soft); font-variant-numeric:tabular-nums;}
+  .seg button.on .n{background:var(--brand); color:#fff;}
+  .seg button:disabled .n{background:rgba(16,27,51,.05); color:#B4BAC8;}
   .vlist{border:1px solid var(--line); border-radius:10px; overflow:hidden; max-height:400px; overflow-y:auto;}
   .vrow{display:flex; align-items:center; gap:12px; padding:9px 13px; border-bottom:1px solid var(--line);}
   .vrow:last-child{border-bottom:none;}
@@ -256,6 +271,36 @@
   .sd-arrow{color:var(--ink-soft);}
   .sd-to{color:var(--add-text);}
 
+  /* ---- classification changes: one line each ---- */
+  .cc{border:1px solid var(--line); border-radius:10px; overflow:hidden; margin-top:16px;}
+  .cc-h{display:flex; align-items:center; gap:9px; padding:9px 14px; background:var(--paper);
+        border-bottom:1px solid var(--line); font-size:12.5px;}
+  .cc-h strong{font-size:13px;}
+  .cc-h .sp{margin-left:auto; color:var(--ink-soft); font-size:11.5px;}
+  .cc-row{display:grid; grid-template-columns:76px 116px 1fr auto auto auto;
+          align-items:center; gap:12px; padding:9px 14px; border-bottom:1px solid var(--line-soft);
+          font-size:12.5px;}
+  .cc-row:last-child{border-bottom:none;}
+  .cc-row:hover{background:var(--paper);}
+  .cc-field{color:var(--ink-soft); font-weight:600; font-size:11px;
+            text-transform:uppercase; letter-spacing:.04em;}
+  .cc-val{display:flex; align-items:center; gap:7px; flex-wrap:wrap; min-width:0;}
+  .cc-val code{font-family:ui-monospace,Menlo,monospace; font-size:12px;
+               background:var(--paper); border:1px solid var(--line); border-radius:5px;
+               padding:2px 7px; word-break:break-word;}
+  .cc-val code.old{color:var(--rem-text); text-decoration:line-through; opacity:.75;}
+  .cc-val code.new{color:var(--add-text); border-color:var(--add-soft); background:var(--add-soft);}
+  .cc-val .arrow{color:var(--ink-faint);}
+  .cc-impact{font-variant-numeric:tabular-nums; white-space:nowrap; color:var(--ink-soft);}
+  .cc-impact b{color:var(--ink);}
+  .cc-meta{color:var(--ink-faint); font-size:11.5px; white-space:nowrap;}
+  .cc-foot{padding:9px 14px; background:var(--paper); border-top:1px solid var(--line);
+           font-size:11.5px; color:var(--ink-soft);}
+  @media (max-width:900px){
+    .cc-row{grid-template-columns:1fr; gap:5px;}
+    .cc-meta{display:none;}
+  }
+
   .hidden{display:none !important;}
   .val-row{display:flex; gap:10px; align-items:flex-start; padding:9px 0; border-bottom:1px solid var(--line); font-size:12.5px;}
   .val-row:last-child{border-bottom:none;}
@@ -319,11 +364,11 @@
         <div id="stagedFilter"></div>
         <div id="stagedList"></div>
         <div style="display:flex; gap:9px; flex-wrap:wrap; margin-top:14px;">
-          <button class="btn ok" id="btnApply">Apply staged to draft</button>
+          <button class="btn ok" id="btnApply">Apply changes</button>
           <button class="btn ok" id="btnApplyVocab">Apply classification changes</button>
           <button class="btn" id="btnExportChanges">Export change-set CSV</button>
           <button class="btn" id="btnExportFull">Export full glossary</button>
-          <button class="btn danger" id="btnDiscard">Discard staged</button>
+          <button class="btn danger" id="btnDiscard">Discard all changes</button>
         </div>
       </div>
     </main>
@@ -852,6 +897,17 @@ function effectiveVocab(field){
 }
 /* What a pending change will do when applied. Recomputed on render rather than
    frozen at stage time, because an earlier pending change can alter it. */
+/* What validation accepts. Wider than effectiveVocab() by the values a pending
+   rename is moving away from: applying the rename rewrites staged edits as well
+   as terms, so an edit still carrying the old spelling is not an error — it is
+   simply waiting. A pending deletion is not forgiven the same way, because
+   nothing will rewrite those. */
+function validVocab(field){
+  const vals=new Set(effectiveVocab(field));
+  vocabPending.filter(p=>p.field===field&&p.op==='rename').forEach(p=>vals.add(p.from));
+  return [...vals];
+}
+
 function pendingImpact(p){
   const f=vfield(p.field);
   if(!f||p.op==='add') return {terms:0,staged:0};
@@ -963,7 +1019,7 @@ const IMPORT_CHECKS=[
   {msg:'Updates and removals require an ID', bad:r=>r._a!=='add'&&!String(r.ID||'').trim()},
   {msg:'ID does not match any term in the master list', bad:r=>r._a!=='add'&&r.ID&&!master.some(m=>m.ID===r.ID)},
   {msg:'Term and definition are required', bad:r=>r._a!=='remove'&&(!String(r.Term||'').trim()||!String(r.Definition||'').trim())},
-  {msg:'Contains a value outside the vocabulary', bad:r=>r._a!=='remove'&&VOCAB_FIELDS.some(f=>cellValues(r,f).some(v=>!effectiveVocab(f.key).includes(v)))}
+  {msg:'Contains a value outside the vocabulary', bad:r=>r._a!=='remove'&&VOCAB_FIELDS.some(f=>cellValues(r,f).some(v=>!validVocab(f.key).includes(v)))}
 ];
 async function loadChangeSet(text){
   const parsed=parseCSV(text);
@@ -1182,7 +1238,7 @@ const RULES=[
      return e.filter(x=>{if(x.action==='remove')return false;
        const n=(x.data.Term||'').trim().toLowerCase(),o=live.get(n); return n&&o&&o!==x.data.ID;});}},
   {level:'error',label:'Value outside the vocabulary',why:'Add it under Vocabulary first, or choose an existing value.',
-   check:e=>e.filter(x=>x.action!=='remove'&&VOCAB_FIELDS.some(f=>cellValues(x.data,f).some(v=>!effectiveVocab(f.key).includes(v))))}
+   check:e=>e.filter(x=>x.action!=='remove'&&VOCAB_FIELDS.some(f=>cellValues(x.data,f).some(v=>!validVocab(f.key).includes(v))))}
 ];
 /* Built from RULES rather than written out, so the explanation cannot drift
    away from what is actually enforced. */
@@ -1228,38 +1284,39 @@ const fieldLabel=f=>(LINK_FIELDS.find(x=>x.key===f)||{}).label
 /* Classification changes sit above the term list because they explain it: a
    rename shows up as dozens of edited terms with no stated cause, and the impact
    count is the part a reviewer actually needs. */
+/* One phrasing for both panels, tensed by whether it has happened yet. */
+function ccImpact(op,im,done){
+  const n=im.terms||0;
+  if(op==='add') return `<span style="color:var(--ink-faint)">available to use</span>`;
+  if(!n) return `<span style="color:var(--ink-faint)">no terms</span>`;
+  const s=`<b>${n.toLocaleString()}</b> term${n===1?'':'s'}`;
+  if(op==='delete') return done?`${s} left unclassified`:`${s} would lose it`;
+  return done?`${s} rewritten`:`${s} affected`;
+}
+
 function renderVocabPending(){
   const el=$('vocabPending');
   if(!vocabPending.length){ el.innerHTML=''; return; }
   const verb={add:'Add',rename:'Rename',delete:'Delete'};
-  const cls={add:'add',rename:'upd',delete:'rem'};
-  el.innerHTML=`<div class="staged-wrap" style="margin-top:14px;">
-    <div class="sd-row" style="background:var(--upd-soft);">
-      <strong style="font-size:13px;">Classification changes — staged</strong>
-      <span class="sd-origin"> · ${vocabPending.length} not applied yet</span>
-    </div>
+  const cls={add:'add',rename:'update',delete:'remove'};
+  el.innerHTML=`<div class="cc">
+    <div class="cc-h"><span class="chip update">staged</span>
+      <strong>Classification changes</strong>
+      <span class="sp">${vocabPending.length} not applied yet</span></div>
     ${vocabPending.map(p=>{
       const im=pendingImpact(p);
-      return `<div class="sd-row">
-        <div class="sd-head">
-          <span class="chip ${cls[p.op]}">${verb[p.op]}</span>
-          <strong>${esc(vfield(p.field)?.label||p.field)}</strong>
-          <span class="sd-origin">${p.by?esc(p.by)+' · ':''}${new Date(p.at).toLocaleString()}</span>
-          <button class="btn sm danger" data-vundo2="${esc(p.id)}" style="margin-left:auto;">Undo</button>
-        </div>
-        <div class="sd-line"><span class="sd-f">Value</span>
-          ${p.from?`<span class="sd-from">${esc(p.from)}</span>`:''}
-          ${p.from&&p.to?'<span class="sd-arrow">→</span>':''}
-          ${p.to?`<span class="sd-to">${esc(p.to)}</span>`:''}</div>
-        <div class="sd-line"><span class="sd-f">Will affect</span>
-          <span>${p.op==='add'
-            ? 'No existing term — the value is already available to use'
-            : im.terms
-              ? `<strong>${im.terms.toLocaleString()}</strong> term(s)`
-                +(im.staged?` and ${im.staged.toLocaleString()} staged edit(s)`:'')
-                +(p.op==='delete'?', which would then be outside the vocabulary':' would be rewritten')
-              : 'No term carries this value'}</span></div>
+      return `<div class="cc-row">
+        <span class="chip ${cls[p.op]}">${verb[p.op]}</span>
+        <span class="cc-field">${esc(vfield(p.field)?.label||p.field)}</span>
+        <span class="cc-val">
+          ${p.from?`<code class="old">${esc(p.from)}</code>`:''}
+          ${p.from&&p.to?'<span class="arrow">→</span>':''}
+          ${p.to?`<code class="new">${esc(p.to)}</code>`:''}</span>
+        <span class="cc-impact">${ccImpact(p.op,im)}</span>
+        <span class="cc-meta">${p.by?esc(p.by):''}</span>
+        <button class="btn sm danger" data-vundo2="${esc(p.id)}">Undo</button>
       </div>`;}).join('')}
+    <div class="cc-foot">Terms are not rewritten until these are applied. Publishing is blocked while any remain.</div>
   </div>`;
   el.querySelectorAll('[data-vundo2]').forEach(b=>b.onclick=()=>unstageVocab(b.dataset.vundo2));
 }
@@ -1268,34 +1325,21 @@ function renderVocabChanges(){
   const el=$('vocabChanges');
   if(!vocabLog.length){ el.innerHTML=''; return; }
   const verb={add:'Added',rename:'Renamed',merge:'Merged',delete:'Deleted'};
-  const cls={add:'add',rename:'upd',merge:'upd',delete:'rem'};
-  el.innerHTML=`<div class="staged-wrap" style="margin-top:14px;">
-    <div class="sd-row" style="background:var(--brand-soft);">
-      <strong style="font-size:13px;">Classification changes</strong>
-      <span class="sd-origin"> · ${vocabLog.length} since the last published version</span>
-    </div>
-    ${vocabLog.map((v,i)=>`<div class="sd-row">
-      <div class="sd-head">
-        <span class="chip ${cls[v.op]}">${verb[v.op]}</span>
-        <strong>${esc(vfield(v.field)?.label||v.field)}</strong>
-        <span class="sd-origin">${v.by?esc(v.by)+' · ':''}${new Date(v.at).toLocaleString()}</span>
-      </div>
-      <div class="sd-line">
-        <span class="sd-f">Value</span>
-        ${v.from?`<span class="${v.op==='delete'?'sd-from':'sd-from'}">${esc(v.from)}</span>`:''}
-        ${v.from&&v.to?'<span class="sd-arrow">→</span>':''}
-        ${v.to?`<span class="sd-to">${esc(v.to)}</span>`:''}
-      </div>
-      <div class="sd-line">
-        <span class="sd-f">Impact</span>
-        <span>${v.terms
-          ? `<strong>${v.terms.toLocaleString()}</strong> term(s) rewritten`
-          : v.op==='add' ? 'None yet — the value is available to use'
-          : v.op==='delete' ? '<strong>none</strong> — no term used it'
-          : 'No term carried this value'}${
-          v.staged?` · ${v.staged.toLocaleString()} staged edit(s) rewritten`:''}${
-          v.op==='delete'&&v.terms?` — those terms are now outside the vocabulary`:''}</span>
-      </div>
+  const cls={add:'add',rename:'update',merge:'update',delete:'remove'};
+  el.innerHTML=`<div class="cc">
+    <div class="cc-h"><span class="chip add">applied</span>
+      <strong>Classification changes</strong>
+      <span class="sp">${vocabLog.length} since version ${version-1>0?version-1:'the baseline'}</span></div>
+    ${vocabLog.map(v=>`<div class="cc-row">
+      <span class="chip ${cls[v.op]}">${verb[v.op]}</span>
+      <span class="cc-field">${esc(vfield(v.field)?.label||v.field)}</span>
+      <span class="cc-val">
+        ${v.from?`<code class="old">${esc(v.from)}</code>`:''}
+        ${v.from&&v.to?'<span class="arrow">→</span>':''}
+        ${v.to?`<code class="new">${esc(v.to)}</code>`:''}</span>
+      <span class="cc-impact">${ccImpact(v.op,v,true)}</span>
+      <span class="cc-meta">${v.by?esc(v.by)+' · ':''}${new Date(v.at).toLocaleDateString()}</span>
+      <span></span>
     </div>`).join('')}
   </div>`;
 }
@@ -1307,12 +1351,28 @@ function renderStagedFilter(){
   const n=a=>list.filter(x=>x.action===a).length;
   const opts=[['all','All',list.length],['add','Additions',n('add')],
               ['update','Updates',n('update')],['remove','Removals',n('remove')]];
-  el.innerHTML=`<div class="mode" style="margin-top:14px;">${opts.map(([k,l,c])=>
-    `<button data-sfilter="${k}" class="${stagedFilter===k?'on':''}"${c?'':' disabled'}>${l} ${c}</button>`).join('')}</div>`;
+  el.innerHTML=`<div class="seg">${opts.map(([k,l,c])=>
+    `<button data-sfilter="${k}" class="${stagedFilter===k?'on':''}"${c?'':' disabled'}>${l}<span class="n">${c}</span></button>`).join('')}</div>`;
   el.querySelectorAll('[data-sfilter]').forEach(b=>b.onclick=()=>{
     if(b.disabled) return;
     stagedFilter=b.dataset.sfilter; renderStagedFilter(); renderStagedList();
   });
+}
+
+/* Show the part that actually differs. Truncating from the start makes a change
+   past the cut-off look like no change at all — a whitespace fix late in a long
+   definition rendered as two identical lines. */
+function diffWindow(from,to,pad=55){
+  const a=String(from??''), b=String(to??'');
+  let i=0; while(i<a.length&&i<b.length&&a[i]===b[i]) i++;
+  // Walk back to a word boundary so the window does not start mid-word.
+  let start=Math.max(0,i-pad);
+  if(start>0){ const sp=a.lastIndexOf(' ',start); if(sp>start-14&&sp>0) start=sp+1; }
+  const cut=t=>{
+    const end=Math.min(t.length,i+pad*2);
+    return (start>0?'…':'')+t.slice(start,end)+(end<t.length?'…':'');
+  };
+  return {from:cut(a), to:cut(b), identical:a===b};
 }
 
 function renderStagedList(){
@@ -1347,12 +1407,18 @@ function renderStagedList(){
       const diffs=stagedDiffFields(e);
       body=diffs.length?diffs.map(d=>{
         const link=isLink(d.field);
-        const from=link?linkLog(d.from):d.from, to=link?linkLog(d.to):d.to;
+        const rawFrom=link?linkLog(d.from):d.from, rawTo=link?linkLog(d.to):d.to;
+        const w=diffWindow(rawFrom,rawTo);
+        const none='<em style="color:var(--ink-soft)">none</em>';
+        // A change that is only whitespace is invisible when rendered, so say so.
+        const wsOnly=String(rawFrom).replace(/\s+/g,' ').trim()===String(rawTo).replace(/\s+/g,' ').trim()
+                     && rawFrom!==rawTo;
         return `<div class="sd-line">
             <span class="sd-f">${esc(fieldLabel(d.field))}</span>
-            <span class="sd-from">${from?trunc(from):'<em style="color:var(--ink-soft)">none</em>'}</span>
+            <span class="sd-from">${rawFrom?esc(w.from):none}</span>
             <span class="sd-arrow">→</span>
-            <span class="sd-to">${to?trunc(to):'<em style="color:var(--ink-soft)">none</em>'}</span></div>`;
+            <span class="sd-to">${rawTo?esc(w.to):none}</span>
+            ${wsOnly?'<span class="chip update" title="The visible text is unchanged; only spacing differs">whitespace only</span>':''}</div>`;
       }).join('')
         : `<div class="sd-line"><span class="sd-f">No field differs</span></div>`;
     }
@@ -1392,6 +1458,8 @@ function renderExport(){
   if(av){ av.disabled=!vocabPending.length;
     av.textContent=vocabPending.length?`Apply classification changes (${vocabPending.length})`
                                       :'Apply classification changes'; }
+  const dis=$('btnDiscard');
+  if(dis) dis.disabled=!list.length && !vocabPending.length;
   $('btnExportChanges').disabled=!list.length||errs.length>0;
   $('btnApply').disabled=!list.length||errs.length>0;
   $('btnExportChanges').textContent=errs.length?`Resolve ${errs.length} error${errs.length>1?'s':''} to export`:`Export change-set CSV (${list.length})`;
@@ -2345,9 +2413,18 @@ $('btnApplyVocab').onclick=async()=>{
   alert(`${r.ops} classification change(s) applied.\n\n${r.terms.toLocaleString()} term(s) rewritten.`);
 };
 $('btnDiscard').onclick=async()=>{
-  if(!Object.keys(staged).length) return;
-  if(!confirm(`Discard all ${Object.keys(staged).length} staged change(s)?`)) return;
-  staged={}; await persist(); renderAll();};
+  const n=Object.keys(staged).length, v=vocabPending.length;
+  if(!n&&!v){ alert('There are no pending changes to discard.'); return; }
+  const parts=[];
+  if(n) parts.push(`${n} staged term edit${n===1?'':'s'}`);
+  if(v) parts.push(`${v} classification change${v===1?'':'s'}`);
+  // Spelled out, because "all changes" could be read as taking the draft too.
+  // It does not, and that distinction matters at this button.
+  if(!confirm(`Are you sure you want to discard all changes?\n\n`
+    +`This throws away ${parts.join(' and ')}.\n\n`
+    +`Changes already applied to the draft are not affected, and neither is the `
+    +`published version. This cannot be undone.`)) return;
+  staged={}; vocabPending=[]; await persist(); renderAll();};
 $('btnRevert').onclick=async()=>{
   if(!confirm('Revert to the shipped baseline?\n\nThis discards every approved fix, applied change and staged edit, and rebuilds the vocabulary from the baseline.')) return;
   staged={}; resolved={}; fixCount=0; newCounter=1; touched={}; version=1; releases=[]; lastBackupAt=null; await bootstrap(true);};
