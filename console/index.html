@@ -218,6 +218,24 @@
   .card-head h2{margin:0;}
   .card-head .btn{margin-left:auto;}
 
+  /* ---- staged change list ---- */
+  .staged-wrap{margin-top:14px; border:1px solid var(--line); border-radius:10px; overflow:hidden;}
+  .sd-row{padding:11px 14px; border-bottom:1px solid var(--line);}
+  .sd-row:last-child{border-bottom:none;}
+  .sd-row:nth-child(even){background:var(--paper);}
+  .sd-head{display:flex; align-items:center; gap:9px; flex-wrap:wrap; margin-bottom:7px;}
+  .sd-head strong{font-size:13.5px;}
+  .sd-origin{font-size:11.5px; color:var(--ink-soft);}
+  .sd-head .btn{margin-left:0;}
+  .sd-head .btn:first-of-type{margin-left:auto;}
+  .sd-line{display:flex; gap:8px; align-items:baseline; font-size:12.5px; padding:2px 0;
+           flex-wrap:wrap; line-height:1.55;}
+  .sd-f{font-weight:700; color:var(--ink-soft); min-width:96px; font-size:11px;
+        text-transform:uppercase; letter-spacing:.04em;}
+  .sd-from{color:var(--rem-text); text-decoration:line-through; opacity:.8;}
+  .sd-arrow{color:var(--ink-soft);}
+  .sd-to{color:var(--add-text);}
+
   .hidden{display:none !important;}
   .val-row{display:flex; gap:10px; align-items:flex-start; padding:9px 0; border-bottom:1px solid var(--line); font-size:12.5px;}
   .val-row:last-child{border-bottom:none;}
@@ -274,6 +292,7 @@
         <p class="hint">Staged edits are not in the draft yet. Apply them to the draft, or export them as a change-set CSV.</p>
         <div class="stats" id="changeStats" style="margin-bottom:14px;"></div>
         <div id="validation"></div>
+        <div id="stagedList"></div>
         <div style="display:flex; gap:9px; flex-wrap:wrap; margin-top:14px;">
           <button class="btn ok" id="btnApply">Apply staged to draft</button>
           <button class="btn" id="btnExportChanges">Export change-set CSV</button>
@@ -1019,6 +1038,60 @@ const RULES=[
 ];
 const validate=()=>RULES.map(r=>({...r,hits:r.check(Object.entries(staged).map(([key,v])=>({key,...v})))})).filter(r=>r.hits.length);
 
+/* Field-level differences for a staged update, so the list says what changed
+   rather than only that something did. */
+function stagedDiffFields(entry){
+  if(entry.action!=='update') return [];
+  const before=master.find(r=>r.ID===entry.data.ID);
+  if(!before) return [];
+  return COLS.filter(c=>c!=='Action'&&String(before[c]??'')!==String(entry.data[c]??''))
+    .map(c=>({field:c, from:String(before[c]??''), to:String(entry.data[c]??'')}));
+}
+
+function renderStagedList(){
+  const entries=Object.entries(staged);
+  if(!entries.length){ $('stagedList').innerHTML=''; return; }
+  const trunc=(s,n=90)=>{ s=String(s??'').replace(/\s+/g,' ').trim();
+    return s.length>n?esc(s.slice(0,n))+'…':(esc(s)||'<em style="color:var(--ink-soft)">empty</em>'); };
+
+  $('stagedList').innerHTML=`<div class="staged-wrap">${entries.map(([key,e])=>{
+    const t=e.data.Term||'(untitled)';
+    const cls={add:'add',update:'upd',remove:'rem'}[e.action];
+    const label={add:'Addition',update:'Update',remove:'Removal'}[e.action];
+    let body='';
+    if(e.action==='add'){
+      body=`<div class="sd-line"><span class="sd-f">Definition</span>
+              <span class="sd-to">${trunc(e.data.Definition,140)}</span></div>
+            <div class="sd-line"><span class="sd-f">Classification</span>
+              <span class="sd-to">${esc([e.data.TermType,e.data.FocusArea,e.data.Source].filter(Boolean).join(' · '))||'—'}</span></div>`;
+    }else if(e.action==='remove'){
+      body=`<div class="sd-line"><span class="sd-f">Effect</span>
+              <span class="sd-to">Removed from the glossary on publish.</span></div>`;
+    }else{
+      const diffs=stagedDiffFields(e);
+      body=diffs.length?diffs.map(d=>`<div class="sd-line">
+            <span class="sd-f">${esc(d.field)}</span>
+            <span class="sd-from">${trunc(d.from)}</span>
+            <span class="sd-arrow">→</span>
+            <span class="sd-to">${trunc(d.to)}</span></div>`).join('')
+        : `<div class="sd-line"><span class="sd-f">No field differs</span></div>`;
+    }
+    return `<div class="sd-row">
+      <div class="sd-head">
+        <span class="chip ${cls}">${label}</span>
+        <strong>${esc(t)}</strong>
+        <span class="sd-origin">${e.origin==='import'?'from import':'edited here'}</span>
+        <button class="btn sm" data-sdedit="${esc(key)}">Edit</button>
+        <button class="btn sm danger" data-sddrop="${esc(key)}">Unstage</button>
+      </div>${body}</div>`;
+  }).join('')}</div>`;
+
+  $('stagedList').querySelectorAll('[data-sdedit]').forEach(b=>
+    b.onclick=()=>openEdit(b.dataset.sdedit));
+  $('stagedList').querySelectorAll('[data-sddrop]').forEach(b=>
+    b.onclick=async()=>{ delete staged[b.dataset.sddrop]; await persist(); renderAll(); });
+}
+
 function renderExport(){
   const list=Object.values(staged),n=a=>list.filter(x=>x.action===a).length;
   $('changeStats').innerHTML=[['Additions',n('add'),'var(--add-text)'],['Updates',n('update'),'var(--upd-text)'],
@@ -1033,6 +1106,7 @@ function renderExport(){
         <div style="color:var(--ink-soft); margin-top:3px;">${i.hits.slice(0,3).map(h=>esc(h.data.Term||'(untitled)')).join(', ')}${i.hits.length>3?` +${i.hits.length-3} more`:''}</div>
         </div></div>`).join('')
       :`<div class="val-row"><span class="chip add">passed</span><div><strong>All checks passed.</strong> ${list.length} row(s) ready.</div></div>`;
+  renderStagedList();
   $('btnExportChanges').disabled=!list.length||errs.length>0;
   $('btnApply').disabled=!list.length||errs.length>0;
   $('btnExportChanges').textContent=errs.length?`Resolve ${errs.length} error${errs.length>1?'s':''} to export`:`Export change-set CSV (${list.length})`;
@@ -1280,9 +1354,12 @@ function toBase64(str){
 }
 
 async function ghReadFile(path){
-  // The raw media type is required above 1MB; the JSON form omits content there.
+  /* cache:'no-store' matters here. Without it the browser serves its own copy
+     from earlier in the session, so a file read straight after writing it comes
+     back stale — and the check for whether the repository is ahead would be
+     comparing against a copy this browser already had. */
   const r=await fetch(ghURL(`/contents/${path}?ref=${encodeURIComponent(repo.branch)}`),
-    {headers:ghHeaders({Accept:'application/vnd.github.raw'})});
+    {cache:'no-store', headers:ghHeaders({Accept:'application/vnd.github.raw'})});
   if(r.status===404) return null;
   if(!r.ok) throw new Error(`Reading ${path}: ${r.status} ${r.statusText}`);
   return r.text();
@@ -1360,6 +1437,7 @@ async function repoConnect(full,branch,token){
     const me=await (await fetch('https://api.github.com/user',{headers:ghHeaders()})).json();
     await gh(`/git/ref/heads/${encodeURIComponent(branch)}`);   // proves branch access
     repoState={ok:true, login:me.login||'(token)', error:null};
+    await checkRemoteDraft();
     await idbSet('repo',probe); await idbSet('lastAutoSave',lastAutoSave);
     return true;
   }catch(e){ repo=prev; repoState={ok:false,error:e.message}; throw e; }
@@ -1379,10 +1457,12 @@ async function repoLoad(){
     lastAutoSave=payload.savedAt;
   }else{
     master=rows; baseline=rows.map(r=>({...r})); touched={}; staged={}; resolved={};
+    lastAutoSave=new Date().toISOString();
     if(!vocab?.TermType?.length) seedVocab();
   }
   if(!vocab?.TermType?.length) seedVocab();
   lastSavedVocab=JSON.stringify(vocab);
+  if(repoState) repoState.behind=false;
   await idbSet('lastAutoSave',lastAutoSave);
   await idbSet('lastSavedVocab',lastSavedVocab);
   await persist(); renderAll();
@@ -1444,19 +1524,46 @@ async function repoPublish(note){
 }
 
 /* ---- autosave ------------------------------------------------------------ */
+/* ---- autosave ------------------------------------------------------------
+   The guards here matter more than the save. A browser that has never loaded
+   from the repository is holding the shipped baseline, not the current draft —
+   so saving it would commit stale content over whatever the last session, or
+   the previous facilitator, had saved. That is silent data loss, and it would
+   happen the moment someone signed in on a new machine. Autosave therefore
+   refuses to run until this browser's copy has been reconciled with the
+   repository's. */
 async function maybeAutoSave(){
   if(!repo||!repoState?.ok) return;
+  if(repoState.behind) return;              // the repository is ahead; load first
+  if(!lastAutoSave && repoState.remoteSavedAt) return;   // never reconciled here
   const d=draftDiff();
   const vocabChanged=JSON.stringify(vocab)!==(lastSavedVocab||'');
   if(!d.total && !Object.keys(staged).length && !vocabChanged) return;
   if(lastAutoSave && Date.now()-new Date(lastAutoSave) < AUTOSAVE_AFTER) return;
-  try{ await repoSaveDraft('daily save'); }
+  try{ await repoSaveDraft('hourly save'); }
   catch(e){ console.warn('Autosave failed:',e); repoState.error=e.message; renderRail(); }
 }
 
 /* Checked in the background on load rather than blocking it: a dead network or an
    expired token should not stop someone editing. The draft is safe locally
    either way; the panel just says so. */
+/* A draft saved from another machine — or by a previous facilitator — is
+   invisible otherwise: this browser keeps its own copy in IndexedDB and would
+   go on editing a stale one. Compared on connect as well as on load, because
+   connecting is exactly when a new machine is at its most out of date. */
+async function checkRemoteDraft(){
+  if(!repo||!repoState?.ok) return;
+  try{
+    const txt=await ghReadFile(DRAFT_PATH);
+    if(!txt) return;
+    const remote=JSON.parse(txt);
+    repoState.remoteSavedAt=remote.savedAt||null;
+    repoState.remoteEditor=remote.editor||null;
+    repoState.behind = !!remote.savedAt && (!lastAutoSave
+      || new Date(remote.savedAt) > new Date(lastAutoSave));
+  }catch(e){ /* a convenience check; failing it is not fatal */ }
+}
+
 async function verifyRepo(){
   if(!repo) return;
   try{
@@ -1467,6 +1574,8 @@ async function verifyRepo(){
     const who=await me.json();
     await gh(`/git/ref/heads/${encodeURIComponent(repo.branch)}`);
     repoState={ok:true, login:who.login||'(token)', error:null};
+
+    await checkRemoteDraft();
   }catch(e){ repoState={ok:false, error:e.message}; }
   renderRail();
   maybeAutoSave();
@@ -1599,7 +1708,13 @@ function renderRail(){
   const connected=repo&&repoState?.ok;
   const age=lastAutoSave?Math.floor((Date.now()-new Date(lastAutoSave))/86400000):null;
 
-  const cta = !repo
+  const cta = (connected && repoState.behind)
+    ? `<div class="rcta"><div class="t">The repository is ahead of this browser</div>
+        <div class="d">A newer draft was saved${repoState.remoteEditor?` by ${esc(repoState.remoteEditor)}`:''}
+          on ${new Date(repoState.remoteSavedAt).toLocaleString()}. This browser is showing an older
+          copy${draftDiff().total?' and has unsaved changes of its own':''}.</div>
+        <button class="btn primary" id="railLoadNewer" style="width:100%">Load the newer draft</button></div>`
+    : !repo
     ? `<div class="rcta"><div class="t">Not signed in</div>
         <div class="d">Changes are being kept in this browser only. Sign in to save the draft
           and to publish new versions.</div>
@@ -1684,6 +1799,7 @@ function renderRail(){
   // attached once at boot.
   const on=(id,fn)=>{ const e=$(id); if(e) e.onclick=fn; };
   on('railConnect',openRepoModal);
+  on('railLoadNewer',e=>loadFromRepo(e.target));
   on('railVocab',()=>openVocab('FocusArea'));
   on('railIssues',openIssues);
   on('railStaged',()=>$('exportCard').scrollIntoView({behavior:'smooth',block:'start'}));
@@ -1888,9 +2004,18 @@ $('repoTest').onclick=async()=>{
   }finally{ $('repoTest').disabled=false; $('repoTest').textContent='Check and save'; }
 };
 async function saveDraftNow(btn){
+  // The same hazard as autosave, but the person asked for it, so warn rather
+  // than refuse — they may genuinely be discarding what is stored.
+  if(repoState?.behind && !confirm(
+      `The repository holds a NEWER draft than this browser.\n\n`
+      +`Saved${repoState.remoteEditor?` by ${repoState.remoteEditor}`:''} on `
+      +`${new Date(repoState.remoteSavedAt).toLocaleString()}.\n\n`
+      +`Saving now replaces it with what is in this browser, and that cannot be undone `
+      +`from here. Load the newer draft first unless you mean to discard it.\n\nSave anyway?`)) return;
   if(btn){ btn.disabled=true; btn.textContent='Saving…'; }
   try{
     const sha=await repoSaveDraft('saved by hand');
+    if(sha) repoState.behind=false;
     alert(sha?`Draft saved to the repository.\n\nCommit ${sha.slice(0,8)}.`:'There are no changes to save.');
   }catch(e){ alert(`Could not save the draft.\n\n${e.message}`); }
   finally{ renderRail(); }
