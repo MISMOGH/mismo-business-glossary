@@ -722,13 +722,23 @@ function detectIssues(){
       // For an off-vocabulary hit, which value is the problem is the whole
       // question. Showing the raw pipe-delimited field left the reader to work
       // it out against a list of seventeen.
-      let bad=null;
+      // A value staged for deletion is not the same as a value that was never
+      // in the list. Nothing has been applied, so nothing about the term is
+      // wrong yet — it is a preview of what deleting would cause. Reporting the
+      // two identically sends people looking for a change that never happened.
+      let bad=null, pendingDel=null;
       if(rule.type==='off-vocab'){
         const f=vfield(key), known=effectiveVocab(key);
-        bad=cellValues(row,f).filter(x=>!known.includes(x));
+        const unknown=cellValues(row,f).filter(x=>!known.includes(x));
+        const staged4del=vocabPending.filter(p=>p.field===key&&p.op==='delete').map(p=>p.from);
+        bad=unknown.filter(x=>!staged4del.includes(x));
+        pendingDel=unknown.filter(x=>staged4del.includes(x));
+        if(!bad.length&&!pendingDel.length) return;
       }
       found.push({id:`${rule.type}:${row.ID||ri}:${key}`,type:rule.type,severity:rule.severity,
-        rowId:row.ID,rowIndex:ri,term:row.Term,field:key,before:v,after,fixable:!!rule.fix,bad});
+        rowId:row.ID,rowIndex:ri,term:row.Term,field:key,before:v,after,fixable:!!rule.fix,
+        bad,pendingDel,
+        severityOverride: (rule.type==='off-vocab'&&!bad?.length&&pendingDel?.length)?'warn':null});
     }));
   });
   const seen=new Map();
@@ -772,17 +782,23 @@ function renderIssueRow(i){
   return `<div class="irow ${st?'done':''}"><div class="imain">
     <div class="iterm">${esc(String(i.term||'(untitled)').slice(0,80))} <span class="ifield">· ${esc(i.field)}</span></div>
     ${i.fixable?`<div class="diff"><span class="b">${dot(String(i.before).slice(0,180))}</span> → <span class="a">${dot(String(i.after).slice(0,180))}</span></div>`
-               :i.bad&&i.bad.length?`<div class="diff">${
+               :(i.bad?.length||i.pendingDel?.length)?`<div class="diff">${
                    cellValues({[i.field]:i.before},vfield(i.field)).map(v=>
-                     i.bad.includes(v)?`<span class="b" title="Not in the ${esc(vfield(i.field).label.toLowerCase())} list">${esc(v)}</span>`
-                                      :`<span style="color:var(--ink-soft)">${esc(v)}</span>`).join('<span style="color:var(--ink-faint)"> · </span>')
-                 } — <strong>${i.bad.map(esc).join(', ')}</strong> ${i.bad.length===1?'is':'are'} not in the list</div>`
+                     i.bad?.includes(v)?`<span class="b" title="Not in the ${esc(vfield(i.field).label.toLowerCase())} list">${esc(v)}</span>`
+                     :i.pendingDel?.includes(v)?`<span class="b" style="text-decoration:line-through" title="Staged for deletion">${esc(v)}</span>`
+                     :`<span style="color:var(--ink-soft)">${esc(v)}</span>`).join('<span style="color:var(--ink-faint)"> · </span>')
+                 } — ${
+                   i.bad?.length?`<strong>${i.bad.map(esc).join(', ')}</strong> ${i.bad.length===1?'is':'are'} not in the list`:''
+                 }${i.bad?.length&&i.pendingDel?.length?'; ':''}${
+                   i.pendingDel?.length?`<strong>${i.pendingDel.map(esc).join(', ')}</strong> ${i.pendingDel.length===1?'is':'are'} <em>staged for deletion</em> — nothing has changed on this term yet`:''
+                 }</div>`
                :`<div class="diff">${esc(String(i.before).slice(0,180))||'<em>(empty)</em>'}${i.note?` — ${esc(i.note)}`:''}</div>`}
     </div><div class="iacts">
     ${st?`<span class="manual">skipped</span><button class="btn sm" data-skip="${esc(i.id)}">Undo</button>`
         :i.fixable?`<button class="btn sm ok" data-fix="${esc(i.id)}">Approve</button><button class="btn sm" data-skip="${esc(i.id)}">Skip</button>`
                   :`<span class="manual">manual</span>${
-                      i.bad&&i.bad.length===1?`<button class="btn sm" data-addvocab="${esc(i.field)}|${esc(i.bad[0])}" title="Stage adding this value to the controlled list">Add to list</button>`:''
+                      i.bad&&i.bad.length===1?`<button class="btn sm" data-addvocab="${esc(i.field)}|${esc(i.bad[0])}" title="Stage adding this value to the controlled list">Add to list</button>`
+                      :i.pendingDel?.length===1?`<button class="btn sm" data-undodel="${esc(i.field)}|${esc(i.pendingDel[0])}" title="Withdraw the staged deletion">Keep it</button>`:''
                     }<button class="btn sm" data-edit2="${esc(i.rowId)}">Edit</button><button class="btn sm" data-skip="${esc(i.id)}">Skip</button>`}
     </div></div>`;
 }
@@ -2367,6 +2383,12 @@ $('issueGroups').onclick=e=>{
   if(sk) skipIssue(sk.dataset.skip);
   if(fa) applyAll(fa.dataset.fixall);
   if(ed){$('issueBg').classList.remove('open'); openEdit(ed.dataset.edit2);}
+  const ud=e.target.closest('[data-undodel]');
+  if(ud){
+    const [field,val]=ud.dataset.undodel.split('|');
+    const p=vocabPending.find(x=>x.field===field&&x.op==='delete'&&x.from===val);
+    if(p) unstageVocab(p.id);
+  }
   if(av){
     const [field,val]=av.dataset.addvocab.split('|');
     const f=vfield(field);
