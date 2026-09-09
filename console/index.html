@@ -41,6 +41,11 @@
   .btn.warn:hover:not(:disabled){background:#B45E05; color:#fff;}
   .btn.danger{color:var(--rem-text); border-color:#F0C9CB;}
   .btn.ok{background:var(--add); border-color:var(--add); color:#fff;}
+  /* Deliberately lighter than "Apply term changes": the two sit side by side and
+     do different jobs, and the term edits are the ones applied most often. */
+  .btn.ok2{background:#2E9E62; border-color:#2E9E62; color:#fff;}
+  .btn.ok2:hover:not(:disabled){background:#268A54; border-color:#268A54;}
+  .btn.ok2:disabled{background:#A8D5BE; border-color:#A8D5BE;}
   .btn.ok:hover:not(:disabled){background:#0F5E34; color:#fff;}
   .btn.sm{padding:5px 10px; font-size:12px;}
 
@@ -432,7 +437,7 @@
 
   <div class="shell hidden" id="shell">
     <aside class="rail" id="rail"></aside>
-    <input type="file" id="restoreFile" accept=".json" class="hidden">
+    <input type="file" id="restoreFile" accept=".csv,.json" class="hidden">
 
     <main>
       <div class="card" id="browseCard">
@@ -468,8 +473,8 @@
         <div id="stagedFilter"></div>
         <div id="stagedList"></div>
         <div id="pendingActions" style="display:flex; gap:9px; flex-wrap:wrap; margin-top:14px;">
-          <button class="btn ok" id="btnApply">Apply changes</button>
-          <button class="btn ok" id="btnApplyVocab">Apply classification changes</button>
+          <button class="btn ok" id="btnApply">Apply term changes</button>
+          <button class="btn ok2" id="btnApplyVocab">Apply classification changes</button>
           <button class="btn" id="btnExportChanges">Export change-set CSV</button>
           <button class="btn" id="btnExportFull">Export full glossary</button>
           <button class="btn danger" id="btnDiscard">Discard all changes</button>
@@ -1742,23 +1747,58 @@ function renderExport(){
       :`<div class="val-row"><span class="chip add">passed</span><div>
           <strong>All checks passed.</strong> ${list.length} row(s) ready. ${checksTip()}</div></div>`;
   renderVocabPending(); renderVocabChanges(); renderStagedFilter(); renderStagedList();
+  const ap=$('btnApply');
+  if(ap) ap.textContent = list.length ? `Apply term changes (${list.length})` : 'Apply term changes';
   const av=$('btnApplyVocab');
   if(av){ av.disabled=!vocabPending.length;
     av.textContent=vocabPending.length?`Apply classification changes (${vocabPending.length})`
                                       :'Apply classification changes'; }
   const dis=$('btnDiscard');
   if(dis) dis.disabled=!list.length && !vocabPending.length;
-  $('btnExportChanges').disabled=!list.length||errs.length>0;
+  $('btnExportChanges').disabled=(!list.length&&!classificationEdits().length)||errs.length>0;
   $('btnApply').disabled=!list.length||errs.length>0;
-  $('btnExportChanges').textContent=errs.length?`Resolve ${errs.length} error${errs.length>1?'s':''} to export`:`Export change-set CSV (${list.length})`;
+  const extra=classificationEdits().filter(r=>!staged[r.ID]).length;
+  const total=list.length+extra;
+  $('btnExportChanges').textContent=errs.length
+    ? `Resolve ${errs.length} error${errs.length>1?'s':''} to export`
+    : `Export change-set CSV (${total.toLocaleString()})`;
+  $('btnExportChanges').title=extra
+    ? `${list.length} staged edit(s) plus ${extra.toLocaleString()} term(s) rewritten by a classification change`
+    : '';
 }
 const stamp=()=>new Date().toISOString().slice(0,19).replace(/[-:T]/g,'');
+/* Terms rewritten by an applied classification change belong in the change-set.
+   Renaming a focus area rewrites the field on every term carrying it, and those
+   updates have to reach the downstream system like any other edit — but they
+   land in the draft rather than in the staged list, so exporting staged alone
+   silently dropped them. A rename touching 6,132 terms would have produced an
+   empty file. */
+function classificationEdits(){
+  return draftDiff().edited
+    .filter(x=>x.fields.every(f=>vfield(f)))       // only classification fields differ
+    .map(x=>x.row);
+}
+
 function exportChanges(){
-  download(`GlossaryChangeSet_${stamp()}.csv`, toCSV(Object.values(staged).map(s=>{
+  const rows=Object.values(staged).map(s=>{
     const o=Object.fromEntries(COLS.map(c=>[c,s.data[c]??''])); o.Action=s.action;
     if(s.action==='add') o.ID='';   // enforced again at the boundary
     return o;
-  }),COLS));
+  });
+  const seen=new Set(rows.map(r=>r.ID).filter(Boolean));
+  // A term that is both staged and touched by a classification change appears
+  // once: the staged version, which is the later of the two.
+  for(const r of classificationEdits()){
+    if(seen.has(r.ID)) continue;
+    rows.push({...Object.fromEntries(COLS.map(c=>[c,r[c]??''])), Action:'update'});
+    seen.add(r.ID);
+  }
+  if(!rows.length){ alert('There is nothing to export.'); return; }
+  if(vocabPending.length && !confirm(
+      `${vocabPending.length} classification change(s) are staged but not applied.\n\n`
+      +`The terms they will rewrite are not in this file, because they have not been `
+      +`rewritten yet. Apply them first if you want them included.\n\nExport anyway?`)) return;
+  download(`GlossaryChangeSet_${stamp()}.csv`, toCSV(rows,COLS));
 }
 /* Full export includes AKA/Related; change-sets cannot, since the upload schema
    has no column for them. Link IDs are emitted alongside readable names so the
@@ -2488,20 +2528,48 @@ function renderDraftModal(){
    represent months of work. This writes the complete state to a file that can
    restore it exactly, rather than only the human-readable change-set. */
 const BACKUP_FORMAT = 1;
+/* The backup is a CSV in the same shape as the full glossary export, so it can
+   be opened in Excel and read by anything that reads the glossary.
+
+   That is a deliberate narrowing. The old JSON also carried staged edits, the
+   classification lists and the release history, and a CSV cannot hold those. It
+   is a reasonable trade now that the draft is committed to the repository every
+   hour with full history — that is the real safety net, and this file's job is
+   to be a readable copy of the glossary rather than a console snapshot. */
 async function exportBackup(){
-  const d=draftDiff();
-  const payload={
-    format:BACKUP_FORMAT, app:'mismo-glossary-console', savedAt:new Date().toISOString(),
-    summary:{terms:master.length, staged:Object.keys(staged).length,
-             draftChanges:d.total, nextVersion:version, releases:releases.length},
-    state:{master,baseline,vocab,staged,resolved,touched,releases,version,fixCount,newCounter}
-  };
-  lastBackupAt=payload.savedAt; await persist(); renderRail();
-  download(`GlossaryConsoleBackup_${stamp()}.json`, JSON.stringify(payload));
+  const byId=new Map(master.map(r=>[r.ID,r.Term]));
+  const names=v=>splitMulti(v).map(id=>byId.get(id)||id).join('|');
+  const cols=[...FULL_COLS,'AKA_Names','Related_Names'];
+  const rows=master.map(r=>({
+    ...Object.fromEntries(FULL_COLS.map(c=>[c,c==='Action'?'':(r[c]??'')])),
+    AKA_Names:names(r.AKA), Related_Names:names(r.Related)
+  }));
+  lastBackupAt=new Date().toISOString(); await persist(); renderRail();
+  download(`GlossaryBackup_${stamp()}.csv`, toCSV(rows,cols));
 }
 async function restoreBackup(file){
+  const text=await file.text();
+  // Backups are CSV now; JSON ones taken before the change still restore, since
+  // a person reaching for a backup is usually reaching for an old one.
+  if(/\.csv$/i.test(file.name) || !text.trim().startsWith('{')){
+    const rows=parseCSV(text);
+    if(!rows.length || !('Term' in rows[0])){
+      alert('That CSV does not look like a glossary backup.\n\nExpected the columns produced by "Download a backup".');
+      return;
+    }
+    if(!confirm(`Restore ${rows.length.toLocaleString()} term(s) from this file?\n\n`
+      +`This replaces the glossary in this browser. A CSV backup holds the terms only — `
+      +`staged edits, classification lists and release history are not in it and will be `
+      +`rebuilt from the terms.\n\nContinue?`)) return;
+    master=rows.map(r=>Object.fromEntries(MASTER_COLS.map(c=>[c,r[c]??''])));
+    baseline=master.map(r=>({...r}));
+    staged={}; touched={}; resolved={}; seedVocab(); sortMaster();
+    await persist(); renderAll();
+    alert(`Restored ${master.length.toLocaleString()} terms.`);
+    return;
+  }
   let payload;
-  try{ payload=JSON.parse(await file.text()); }
+  try{ payload=JSON.parse(text); }
   catch(e){ alert('That file is not valid JSON, so it cannot be a console backup.'); return; }
   if(payload.app!=='mismo-glossary-console' || !payload.state || !Array.isArray(payload.state.master)){
     alert('That does not look like a console backup.\n\nExpected a file produced by "Download backup". To load a glossary export instead, use "Load official export as new baseline".');
@@ -3068,8 +3136,9 @@ function renderRail(){
     <details class="dr" id="drBackups"${railDrawers.backups?' open':''}>
       <summary>Backups &amp; earlier versions</summary>
       <div class="drbody">
-        <p class="drhint">A backup is a single file on your computer holding the draft, the
-          classifications and the release history.</p>
+        <p class="drhint">A backup is a CSV of the whole glossary, saved to your computer and
+          readable in Excel. The draft, classifications and release history live in the
+          repository.</p>
         <button class="btn" id="railBackup" style="width:100%;">Download a backup</button>
         <button class="btn" id="railRestore" style="width:100%;">Restore from a backup…</button>
         <button class="btn" id="railVersions" style="width:100%;">Past versions${releases.length?` (${releases.length})`:''}</button>
