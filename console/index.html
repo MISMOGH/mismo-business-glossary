@@ -1605,11 +1605,34 @@ function buildChangeSet(d){
   ];
 }
 
+/* Restoring a row from the baseline would also undo any classification rename
+   applied since, reintroducing a value that is no longer in the vocabulary.
+   That is wrong: a rename is a decision about the whole glossary, not an edit to
+   this term, and reverting one term should not opt it out. The baseline row is
+   therefore mapped through the classification changes before being restored,
+   and values deleted since are dropped. */
+function mapThroughVocabChanges(row){
+  const out={...row};
+  const net=netVocabChanges();
+  for(const f of VOCAB_FIELDS){
+    const changes=net.filter(c=>c.field===f.key);
+    if(!changes.length) continue;
+    let vals=cellValues(out,f);
+    for(const c of changes){
+      if(c.op==='rename') vals=vals.map(v=>v===c.from?c.to:v);
+      else if(c.op==='delete') vals=vals.filter(v=>v!==c.from);
+    }
+    out[f.key]=[...new Set(vals)].join(f.multi||'');
+  }
+  return out;
+}
+
 async function revertChange(id,kind){
   if(kind==='added'){ const i=master.findIndex(r=>r.ID===id); if(i>-1) master.splice(i,1); }
   else if(kind==='edited'){ const b=baseline.find(r=>r.ID===id),i=master.findIndex(r=>r.ID===id);
-    if(b&&i>-1) master[i]={...b}; }
-  else if(kind==='removed'){ const b=baseline.find(r=>r.ID===id); if(b) master.push({...b}); }
+    if(b&&i>-1) master[i]=mapThroughVocabChanges(b); }
+  else if(kind==='removed'){ const b=baseline.find(r=>r.ID===id);
+    if(b) master.push(mapThroughVocabChanges(b)); }
   delete touched[id];
   await persist(); renderAll();
 }
@@ -1687,7 +1710,9 @@ function renderDraftModal(){
           }).join('<br>')}</div>`
           :`<div class="diff">${esc(String(x.row.Definition||'').slice(0,140))}</div>`}
         </div><div class="iacts">
-        <button class="btn sm" data-revert="${esc(x.row.ID)}" data-kind="${kind}">Revert</button>
+        ${kind==='edited'&&x.fields.every(f=>vfield(f))&&netVocabChanges().length
+          ? `<span class="manual" title="This term changed only because of a classification change. Undo that change instead.">from classification</span>`
+          : `<button class="btn sm" data-revert="${esc(x.row.ID)}" data-kind="${kind}">Revert</button>`}
         </div></div>`;}).join('')}</div></div>`).join('')
     : `<div class="empty">No changes since the last published version.</div>`;
 }
