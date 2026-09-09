@@ -54,6 +54,26 @@ any other publishing credential.
 When the token expires the console says so plainly, keeps the draft safe locally, and
 carries on letting them edit. Nothing is lost; it just stops saving until reconnected.
 
+## Classification descriptions
+
+Each term type, focus area and source carries a description, and that is what appears
+under it on the public glossary. They are edited under **Manage classifications** — every
+value shows its description, and **Description** opens an editor beneath it.
+
+Values with none are marked in amber and counted at the foot of the panel, because a
+value without one shows on the public site as having no published description.
+
+**Suggest wording** offers a first draft in the phrasing MISMO already uses — focus areas
+read *"A set of terms typically used in…"*, sources *"A set of terms sourced from…"* — with
+the value's name spelled out from its camel case. It is a starting point to rewrite, not
+an answer: it exists because an empty box is the reason descriptions go unwritten. Adding
+a new value opens its editor straight away, since the moment a classification is created
+is the moment its meaning is known.
+
+Descriptions travel with the draft and are written to `data/reference.json` when a version
+is published. Editing one changes no terms, so it produces no draft changes — but it is
+still saved and published like any other edit.
+
 ## Guided tour
 
 The console opens a short guided tour the first time it is used, and it can be reopened at

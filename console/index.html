@@ -126,7 +126,15 @@
   .seg button.on .n{background:var(--brand); color:#fff;}
   .seg button:disabled .n{background:rgba(16,27,51,.05); color:#B4BAC8;}
   .vlist{border:1px solid var(--line); border-radius:10px; overflow:hidden; max-height:400px; overflow-y:auto;}
-  .vrow{display:flex; align-items:center; gap:12px; padding:9px 13px; border-bottom:1px solid var(--line);}
+  .vval{flex:1 1 260px; min-width:0;}
+  .vdesc{font-size:12px; color:var(--ink-soft); font-weight:400; line-height:1.5; margin-top:3px;
+         max-width:60ch;}
+  .vdesc.none{color:var(--upd-text); font-style:italic;}
+  .vedit{flex-basis:100%; margin-top:10px; border-top:1px solid var(--line); padding-top:10px;}
+  .vedit textarea{width:100%; font-family:inherit; font-size:13px; padding:8px 10px;
+    border:1px solid var(--line); border-radius:8px; resize:vertical; color:var(--ink);}
+  .vedit-foot{display:flex; align-items:center; gap:8px; margin-top:8px; flex-wrap:wrap;}
+  .vrow{display:flex; flex-wrap:wrap; align-items:center; gap:12px; padding:9px 13px; border-bottom:1px solid var(--line);}
   .vrow:last-child{border-bottom:none;}
   .vrow:hover{background:var(--paper);}
   .vval{font-weight:600; font-size:13px; flex:1; word-break:break-word;}
@@ -1038,12 +1046,27 @@ function renderVocab(){
   const rows=vals.map(v=>{
     const n=use.get(v)||0, p=pendFor(v);
     const tag=p?`<span class="chip ${p.op==='add'?'add':'upd'}" title="Staged — not applied yet">${p.op==='add'?'new':'renamed'}</span>`:'';
+    const d=descOf(vTab,v), documented=realDesc(d), open=vDescOpen===v;
     return `<div class="vrow"><span class="vval">${esc(v)} ${tag}
-        ${p&&p.op==='rename'?`<span style="font-weight:400;color:var(--ink-soft);font-size:12px;"> was ${esc(p.from)}</span>`:''}</span>
+        ${p&&p.op==='rename'?`<span style="font-weight:400;color:var(--ink-soft);font-size:12px;"> was ${esc(p.from)}</span>`:''}
+        <div class="vdesc ${documented?'':'none'}">${documented
+          ? esc(d.length>150?d.slice(0,150)+'…':d)
+          : 'No description — the public site will say none has been published.'}</div></span>
       <span class="vuse ${n?'':'zero'}">${n.toLocaleString()} term${n===1?'':'s'}</span>
-      <span>${p?`<button class="btn sm" data-vundo="${esc(p.id)}">Undo</button>`
-              :`<button class="btn sm" data-vren="${esc(v)}">Rename</button>
-                <button class="btn sm danger" data-vdel="${esc(v)}">Delete</button>`}</span></div>`;
+      <span>
+        <button class="btn sm ${documented?'':'warn'}" data-vdesc="${esc(v)}">${open?'Close':(documented?'Description':'Add description')}</button>
+        ${p?`<button class="btn sm" data-vundo="${esc(p.id)}">Undo</button>`
+           :`<button class="btn sm" data-vren="${esc(v)}">Rename</button>
+             <button class="btn sm danger" data-vdel="${esc(v)}">Delete</button>`}</span>
+      ${open?`<div class="vedit">
+        <textarea id="vDescBox" rows="3" placeholder="What this ${esc((vfield(vTab)?.label||'').replace(/s$/,'').toLowerCase())} means, as it will read on the public site…">${esc(documented?d:'')}</textarea>
+        <div class="vedit-foot">
+          <button class="btn sm" id="vDescSuggest">Suggest wording</button>
+          <span class="count" style="margin-right:auto;">Shown under this value on the public glossary.</span>
+          ${documented?`<button class="btn sm danger" id="vDescClear">Remove</button>`:''}
+          <button class="btn sm primary" id="vDescSave">Save</button>
+        </div></div>`:''}
+      </div>`;
   }).join('');
 
   // Values staged for deletion have left the effective list, so they are shown
@@ -1061,7 +1084,9 @@ function renderVocab(){
   $('vlist').innerHTML=(rows+delRows)||`<div class="empty">No values in this list.</div>`;
   const unused=[...use.values()].filter(n=>n===0).length;
   const pend=vocabPending.length;
+  const undoc=vals.filter(v=>!hasDesc(vTab,v)).length;
   $('vHint').innerHTML=`Changes here are <strong>staged</strong> — nothing is rewritten until they are applied under Pending changes. A newly added value can be used straight away.`
+    +(undoc?` <strong style="color:var(--upd-text);">${undoc} value(s) have no description</strong>, and will show as undocumented on the public site.`:'')
     +(unused?` <strong>${unused}</strong> value(s) here are unused.`:'')
     +(pend?` <strong>${pend}</strong> classification change(s) awaiting apply.`:'');
 }
@@ -1228,7 +1253,11 @@ async function vocabAdd(field,val){
   val=String(val||'').trim(); if(!val) return;
   if(effectiveVocab(field).includes(val)){alert(`"${val}" is already in this list.`);return;}
   stageVocab('add',field,null,val);
+  // Opened straight away: a value added without one shows as undocumented on the
+  // public site, and the moment it is created is the moment its meaning is known.
+  vDescOpen=val;
   await persist(); renderAll();
+  if($('vocabBg')?.classList.contains('open')) $('vDescBox')?.focus();
 }
 /* Count what a rename would touch, without changing anything. Used to preview
    impact before the user commits, and to report it afterwards. */
@@ -2498,7 +2527,7 @@ async function publishVersion(){
   baseline=master.map(r=>({...r}));   // the draft becomes the new published state
   touched={}; vocabLog=[]; vocabPending=[]; version++;
   lastAutoSave=new Date().toISOString();
-  lastSavedVocab=JSON.stringify(vocab);
+  lastSavedVocab=JSON.stringify({vocab,refDoc});
   await idbSet('lastAutoSave',lastAutoSave);
   await idbSet('lastSavedVocab',lastSavedVocab);
   await persist(); renderAll();
@@ -2791,7 +2820,7 @@ async function repoLoad(){
     if(!vocab?.TermType?.length) seedVocab();
   }
   if(!vocab?.TermType?.length) seedVocab();
-  lastSavedVocab=JSON.stringify(vocab);
+  lastSavedVocab=JSON.stringify({vocab,refDoc});
   if(repoState) repoState.behind=false;
   await idbSet('lastAutoSave',lastAutoSave);
   await idbSet('lastSavedVocab',lastSavedVocab);
@@ -2805,7 +2834,9 @@ async function repoSaveDraft(reason){
      a source touches no term if the terms already carry the corrected spelling.
      Guarding on term differences alone meant that kind of edit was never saved,
      so a facilitator could correct a governed list and lose it. */
-  const vocabChanged=JSON.stringify(vocab)!==(lastSavedVocab||'');
+  // refDoc is included: editing a description changes nothing about the terms,
+  // so a guard that only watches those would drop the edit silently.
+  const vocabChanged=JSON.stringify({vocab,refDoc})!==(lastSavedVocab||'');
   if(!d.total && !Object.keys(staged).length && !vocabChanged) return null;
   const parts=[`${d.added.length} added`,`${d.edited.length} edited`,`${d.removed.length} removed`];
   if(vocabChanged && !d.total) parts.push('classifications updated');
@@ -2816,7 +2847,7 @@ async function repoSaveDraft(reason){
   const msg=`Save working draft (${parts.join(', ')})${reason?` — ${reason}`:''}${who}`;
   const sha=await ghCommit([{path:DRAFT_PATH,content:buildDraftFile()}],msg);
   lastAutoSave=new Date().toISOString();
-  lastSavedVocab=JSON.stringify(vocab);
+  lastSavedVocab=JSON.stringify({vocab,refDoc});
   await idbSet('lastAutoSave',lastAutoSave);
   await idbSet('lastSavedVocab',lastSavedVocab);
   renderRail();
@@ -2893,7 +2924,7 @@ async function maybeAutoSave(){
   if(repoState.behind) return;              // the repository is ahead; load first
   if(!lastAutoSave && repoState.remoteSavedAt) return;   // never reconciled here
   const d=draftDiff();
-  const vocabChanged=JSON.stringify(vocab)!==(lastSavedVocab||'');
+  const vocabChanged=JSON.stringify({vocab,refDoc})!==(lastSavedVocab||'');
   if(!d.total && !Object.keys(staged).length && !vocabChanged) return;
   if(lastAutoSave && Date.now()-new Date(lastAutoSave) < AUTOSAVE_AFTER) return;
   try{ await repoSaveDraft('hourly save'); }
@@ -3202,6 +3233,45 @@ function renderRail(){
   keep('drBackups','backups'); keep('drReplace','replace');
 }
 
+/* Descriptions are what the public page shows under each classification. They
+   are edited here, travel in the draft, and are written to data/reference.json
+   when a version is published. */
+let vDescOpen=null;
+
+/* A suggestion, not an answer. It follows the wording MISMO already uses — focus
+   areas read "A set of terms typically used in…", sources "A set of terms
+   sourced from…" — so a new entry starts in the house style rather than blank.
+   The author is expected to rewrite it; it is offered because an empty box is
+   the reason descriptions go unwritten. */
+function suggestDescription(field, value){
+  const readable=String(value||'')
+    .replace(/^#/,'')
+    .replace(/([a-z0-9])([A-Z])/g,'$1 $2')     // #ClosingDisclosure -> Closing Disclosure
+    .replace(/\s+/g,' ').trim();
+  if(field==='FocusArea') return `A set of terms typically used in ${readable.toLowerCase()}.`;
+  if(field==='Source')    return `A set of terms sourced from ${readable}.`;
+  return `Represents ${readable.toLowerCase()}.`;
+}
+
+/* Looks through a pending rename. Until it is applied the description still sits
+   under the old name, so the renamed value would read as undocumented and invite
+   someone to rewrite a description that is about to arrive on its own. */
+function descOf(field,value){
+  const key=REF_KEY[field], own=(refDoc[key]||{})[value];
+  if(realDesc(own)) return own;
+  const p=vocabPending.find(x=>x.field===field&&x.op==='rename'&&x.to===value);
+  return p ? (refDoc[key]||{})[p.from] : own;
+}
+const hasDesc=(field,value)=>realDesc(descOf(field,value));
+
+async function setDescription(field, value, text){
+  const key=REF_KEY[field]; if(!key) return;
+  refDoc[key]=refDoc[key]||{};
+  const t=String(text||'').trim();
+  refDoc[key][value]= t || '__UNDOCUMENTED__';
+  await persist(); renderVocab(); renderRail();
+}
+
 function openVocab(tab){ vTab=tab||vTab; renderVocab(); $('vocabBg').classList.add('open'); }
 
 /* The published file is fetched at that release's commit and converted here, so
@@ -3315,7 +3385,18 @@ $('vlist').onclick=e=>{const ren=e.target.closest('[data-vren]'),del=e.target.cl
   if(ren) openRename(vTab,ren.dataset.vren);
   if(del) vocabDelete(vTab,del.dataset.vdel);
   const undo=e.target.closest('[data-vundo]');
-  if(undo) unstageVocab(undo.dataset.vundo);};
+  if(undo){ unstageVocab(undo.dataset.vundo); return; }
+  const dsc=e.target.closest('[data-vdesc]');
+  if(dsc){ vDescOpen = vDescOpen===dsc.dataset.vdesc ? null : dsc.dataset.vdesc; renderVocab(); return; }
+  if(e.target.id==='vDescSuggest'){
+    $('vDescBox').value=suggestDescription(vTab, vDescOpen); $('vDescBox').focus(); return;
+  }
+  if(e.target.id==='vDescSave'){ setDescription(vTab, vDescOpen, $('vDescBox').value); vDescOpen=null; return; }
+  if(e.target.id==='vDescClear'){
+    if(confirm('Remove this description?\n\nThe public site will say none has been published.')){
+      setDescription(vTab, vDescOpen, ''); vDescOpen=null; }
+    return;
+  }};
 let renField=null, renValue=null;
 function openRename(field,val){
   renField=field; renValue=val;
