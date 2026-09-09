@@ -1044,9 +1044,31 @@ function stagedDiffFields(entry){
   if(entry.action!=='update') return [];
   const before=master.find(r=>r.ID===entry.data.ID);
   if(!before) return [];
-  return COLS.filter(c=>c!=='Action'&&String(before[c]??'')!==String(entry.data[c]??''))
+  /* MASTER_COLS, not COLS: the upload columns omit AKA and Related, so diffing
+     against them hid every synonym and relationship change from the log. Those
+     are among the most consequential edits a facilitator makes. */
+  return MASTER_COLS.filter(c=>c!=='ID'&&String(before[c]??'')!==String(entry.data[c]??''))
     .map(c=>({field:c, from:String(before[c]??''), to:String(entry.data[c]??'')}));
 }
+
+/* AKA and Related store term IDs so that renaming a term does not break the
+   reference. A UUID tells the reader nothing, so the log resolves them back to
+   names — and says plainly when an ID no longer resolves, since that is worth
+   noticing rather than hiding. */
+/* Distinct from linkNames() above, which drops IDs it cannot resolve. In a
+   change log a dangling reference is exactly the thing worth seeing, so this
+   names it rather than hiding it. Also checks the baseline, since a link may
+   point at a term the draft has since removed. */
+function linkLog(value){
+  const ids=splitMulti(value);
+  if(!ids.length) return '';
+  return ids.map(id=>{
+    const t=master.find(r=>r.ID===id)||baseline.find(r=>r.ID===id);
+    return t?t.Term:`unresolved (${id.slice(0,8)}…)`;
+  }).join(', ');
+}
+const fieldLabel=f=>(LINK_FIELDS.find(x=>x.key===f)||{}).label
+  ||({TermType:'Term type',FocusArea:'Focus area'}[f])||f;
 
 function renderStagedList(){
   const entries=Object.entries(staged);
@@ -1063,17 +1085,25 @@ function renderStagedList(){
       body=`<div class="sd-line"><span class="sd-f">Definition</span>
               <span class="sd-to">${trunc(e.data.Definition,140)}</span></div>
             <div class="sd-line"><span class="sd-f">Classification</span>
-              <span class="sd-to">${esc([e.data.TermType,e.data.FocusArea,e.data.Source].filter(Boolean).join(' · '))||'—'}</span></div>`;
+              <span class="sd-to">${esc([e.data.TermType,e.data.FocusArea,e.data.Source].filter(Boolean).join(' · '))||'—'}</span></div>`
+        +(linkLog(e.data.AKA)?`<div class="sd-line"><span class="sd-f">Also known as</span>
+              <span class="sd-to">${trunc(linkLog(e.data.AKA))}</span></div>`:'')
+        +(linkLog(e.data.Related)?`<div class="sd-line"><span class="sd-f">Related terms</span>
+              <span class="sd-to">${trunc(linkLog(e.data.Related))}</span></div>`:'');
     }else if(e.action==='remove'){
       body=`<div class="sd-line"><span class="sd-f">Effect</span>
               <span class="sd-to">Removed from the glossary on publish.</span></div>`;
     }else{
       const diffs=stagedDiffFields(e);
-      body=diffs.length?diffs.map(d=>`<div class="sd-line">
-            <span class="sd-f">${esc(d.field)}</span>
-            <span class="sd-from">${trunc(d.from)}</span>
+      body=diffs.length?diffs.map(d=>{
+        const link=isLink(d.field);
+        const from=link?linkLog(d.from):d.from, to=link?linkLog(d.to):d.to;
+        return `<div class="sd-line">
+            <span class="sd-f">${esc(fieldLabel(d.field))}</span>
+            <span class="sd-from">${from?trunc(from):'<em style="color:var(--ink-soft)">none</em>'}</span>
             <span class="sd-arrow">→</span>
-            <span class="sd-to">${trunc(d.to)}</span></div>`).join('')
+            <span class="sd-to">${to?trunc(to):'<em style="color:var(--ink-soft)">none</em>'}</span></div>`;
+      }).join('')
         : `<div class="sd-line"><span class="sd-f">No field differs</span></div>`;
     }
     return `<div class="sd-row">
@@ -1248,8 +1278,14 @@ function renderDraftModal(){
       return `<div class="irow"><div class="imain">
         <div class="iterm">${esc(String(x.row.Term||'(untitled)').slice(0,90))}
           ${t?`<span class="ifield">· ${new Date(t).toLocaleDateString()}</span>`:''}</div>
-        ${kind==='edited'?`<div class="diff">${x.fields.map(f=>
-            `<strong>${esc(f)}:</strong> <span class="b">${esc(String(x.before[f]||'(empty)').slice(0,90))}</span> → <span class="a">${esc(String(x.row[f]||'(empty)').slice(0,90))}</span>`).join('<br>')}</div>`
+        ${kind==='edited'?`<div class="diff">${x.fields.map(f=>{
+            const link=isLink(f);
+            const b=link?linkLog(x.before[f]):String(x.before[f]||'');
+            const a=link?linkLog(x.row[f]):String(x.row[f]||'');
+            return `<strong>${esc(fieldLabel(f))}:</strong> `
+              +`<span class="b">${esc((b||'(none)').slice(0,90))}</span> → `
+              +`<span class="a">${esc((a||'(none)').slice(0,90))}</span>`;
+          }).join('<br>')}</div>`
           :`<div class="diff">${esc(String(x.row.Definition||'').slice(0,140))}</div>`}
         </div><div class="iacts">
         <button class="btn sm" data-revert="${esc(x.row.ID)}" data-kind="${kind}">Revert</button>
