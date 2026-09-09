@@ -605,7 +605,17 @@ function renderRef(){
   }).join('');
 
   const k=kindOf(tab), use=facetCounts(k);
-  const all=Object.entries(REF[tab]);
+  /* Built from the data as well as the descriptions file. Listing only what
+     reference.json documents means a classification carried by real terms can
+     be missing from this panel entirely — which is worse than showing it
+     without a description, because the reader has no way to filter by it and no
+     sign it exists. Anything in use is listed; the descriptions file supplies
+     the text where it has any. */
+  const inUse=new Set();
+  for(const t of TERMS) for(const v of split(t[k.field])) inUse.add(v);
+  const names=[...new Set([...Object.keys(REF[tab]||{}), ...inUse])]
+    .sort((a,b)=>a.localeCompare(b,'en'));
+  const all=names.map(n=>[n, (REF[tab]||{})[n] ?? '__UNDOCUMENTED__']);
   // A ticked option always stays visible, otherwise it could not be unticked.
   const shown=all.filter(([name])=>showAll||checked[tab].has(name)||(use.get(name)||0)>0);
   const hidden=all.length-shown.length;
@@ -620,7 +630,7 @@ function renderRef(){
         <span class="ref-n">${n.toLocaleString()}</span>
       </div>
       <div class="ref-desc">${desc==='__UNDOCUMENTED__'
-        ? `<span class="ref-undoc">Used on ${n.toLocaleString()} term(s) here, but not listed on MISMO's published Focus Area Descriptions page — no official description available.</span>`
+        ? `<span class="ref-undoc">Used on ${n.toLocaleString()} term(s) here, but no official description has been published for it yet.</span>`
         : esc(desc)}</div></div>`;
   }).join('') || `<div class="empty" style="padding:26px 16px;font-size:12.5px;">
       No ${k.plural.toLowerCase()} apply to the current results.</div>`;
