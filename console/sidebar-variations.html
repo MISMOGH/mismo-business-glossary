@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sidebar — variations on C</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Libre+Franklin:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#101B33; --ink-soft:#4B5670; --ink-faint:#7A8299;
+    --paper:#F1F3F9; --card:#FFFFFF; --line:#E1E4EC; --line-soft:#EDEFF5;
+    --brand:#125DAB; --brand-soft:#E7EFF7; --brand-text:#0E4680;
+    --add:#157A44; --add-soft:#E7F7EE; --add-text:#157A44;
+    --upd:#D97706; --upd-soft:#FEF3E2; --upd-text:#A85F06;
+    --rem:#B4232C; --rem-soft:#FDECEC; --rem-text:#B4232C;
+    --radius:12px; --shadow:0 1px 2px rgba(16,27,51,.04), 0 4px 14px rgba(16,27,51,.05);
+  }
+  *{box-sizing:border-box;}
+  body{margin:0; background:var(--paper); color:var(--ink);
+       font-family:'Libre Franklin',system-ui,sans-serif; font-size:14px;}
+  .doc{background:#101B33; color:#fff; padding:24px;}
+  .doc-in{max-width:1560px; margin:0 auto;}
+  .doc h1{margin:0 0 6px; font-size:20px;}
+  .doc p{margin:0; font-size:13px; color:#B9C2D6; max-width:940px; line-height:1.6;}
+  .wrap{max-width:1560px; margin:0 auto; padding:32px 24px 80px;}
+  .cols{display:grid; grid-template-columns:repeat(4,1fr); gap:22px; align-items:start;}
+  @media (max-width:1400px){ .cols{grid-template-columns:repeat(2,1fr);} }
+  @media (max-width:760px){ .cols{grid-template-columns:1fr;} }
+  .opt-tag{display:inline-block; font-size:10px; font-weight:700; letter-spacing:.06em;
+        text-transform:uppercase; background:var(--brand); color:#fff; padding:3px 8px; border-radius:5px;}
+  .opt h2{margin:9px 0 4px; font-size:15.5px;}
+  .opt > p{margin:0; font-size:12.5px; color:var(--ink-soft); line-height:1.55;}
+  .opt .note{font-size:12px; color:var(--ink-faint); line-height:1.55; margin:12px 0 0;}
+  .opt .note b{color:var(--ink-soft);}
+
+  .rail{background:var(--card); border:1px solid var(--line); border-radius:var(--radius);
+        box-shadow:var(--shadow); overflow:hidden; margin-top:14px;}
+  .btn{display:block; width:100%; text-align:center; font-family:inherit; font-size:12.5px;
+       font-weight:600; padding:8px 12px; border-radius:8px; border:1px solid var(--line);
+       background:var(--card); color:var(--ink); cursor:pointer; margin-top:7px;}
+  .btn:hover{border-color:var(--brand); color:var(--brand-text);}
+  .btn.warn{background:var(--upd); border-color:var(--upd); color:#fff;}
+  .btn.sm{padding:6px 10px; font-size:12px;}
+  .btn.quiet{border-color:transparent; color:var(--ink-soft); font-weight:500;}
+  .btn.quiet:hover{border-color:var(--line); color:var(--ink);}
+  .dot{width:7px; height:7px; border-radius:50%; display:inline-block; flex:0 0 auto;}
+  .dot.g{background:var(--add);} .dot.a{background:var(--upd);}
+  .when{font-variant-numeric:tabular-nums;}
+
+  details.dr{border-top:1px solid var(--line);}
+  details.dr summary{list-style:none; cursor:pointer; padding:10px 14px; font-size:12.5px;
+    font-weight:600; color:var(--ink-soft); display:flex; align-items:center; gap:8px;}
+  details.dr summary::-webkit-details-marker{display:none;}
+  details.dr summary:after{content:'▾'; margin-left:auto; font-size:10px; color:var(--ink-faint);}
+  details.dr[open] summary:after{content:'▴';}
+  details.dr summary:hover{background:var(--paper); color:var(--ink);}
+  details.dr .body{padding:2px 14px 13px;}
+  .hint{font-size:11.5px; color:var(--ink-faint); line-height:1.5; margin:0 0 9px;}
+
+  /* ---------- V1: verdict banner + stat grid ---------- */
+  .v1-band{padding:13px 14px; background:var(--add-soft); border-bottom:1px solid #CDE9D9;}
+  .v1-band.attn{background:var(--upd-soft); border-bottom-color:#F0DCB4;}
+  .v1-h{display:flex; align-items:center; gap:8px; font-size:13.5px; font-weight:700;
+        color:var(--add-text); margin-bottom:9px;}
+  .v1-band.attn .v1-h{color:var(--upd-text);}
+  .v1-t{display:flex; justify-content:space-between; font-size:11.5px; color:var(--ink-soft); padding:2px 0;}
+  .v1-grid{display:grid; grid-template-columns:1fr 1fr; gap:1px; background:var(--line);
+           border-bottom:1px solid var(--line);}
+  .v1-cell{background:var(--card); padding:11px 13px;}
+  .v1-n{font-size:19px; font-weight:700; line-height:1.1; font-variant-numeric:tabular-nums;}
+  .v1-l{font-size:10.5px; color:var(--ink-faint); text-transform:uppercase; letter-spacing:.05em; margin-top:3px;}
+  .v1-cell a{color:var(--brand); text-decoration:none;}
+  .v1-pad{padding:12px 14px;}
+
+  /* ---------- V2: accent bars ---------- */
+  .v2-sec{padding:13px 14px 14px; border-bottom:1px solid var(--line); border-left:3px solid transparent;}
+  .v2-sec.ok{border-left-color:var(--add);}
+  .v2-sec.attn{border-left-color:var(--upd); background:#FFFCF6;}
+  .v2-sec.neutral{border-left-color:var(--line);}
+  .v2-h{display:flex; align-items:baseline; gap:8px; margin-bottom:9px;}
+  .v2-h .t{font-size:12px; font-weight:700; letter-spacing:.03em;}
+  .v2-h .c{margin-left:auto; font-size:17px; font-weight:700; font-variant-numeric:tabular-nums;}
+  .v2-h .c.attn{color:var(--upd-text);}
+  .v2-row{display:flex; justify-content:space-between; font-size:12.5px; color:var(--ink-soft); padding:2.5px 0;}
+  .v2-row b{color:var(--ink); font-variant-numeric:tabular-nums;}
+  .v2-row a{color:var(--brand); text-decoration:none;}
+  .v2-say{font-size:12.5px; color:var(--ink-soft); line-height:1.5;}
+
+  /* ---------- V3: everything collapsible ---------- */
+  .v3-row{display:flex; align-items:center; gap:9px; padding:11px 14px;
+          border-bottom:1px solid var(--line); cursor:pointer; font-size:13px;}
+  .v3-row:hover{background:var(--paper);}
+  .v3-row .lbl{font-weight:600;}
+  .v3-row .val{margin-left:auto; font-variant-numeric:tabular-nums; color:var(--ink-soft); font-size:12.5px;}
+  .v3-row .val.attn{color:var(--upd-text); font-weight:700;}
+  .v3-open{padding:0 14px 13px; border-bottom:1px solid var(--line); background:var(--paper);}
+  .v3-open .inner{padding-top:11px;}
+  .v3-mini{display:flex; justify-content:space-between; font-size:12.5px; color:var(--ink-soft); padding:2.5px 0;}
+  .v3-mini b{color:var(--ink);}
+
+  /* ---------- V4: dense ---------- */
+  .v4-top{padding:11px 13px; border-bottom:1px solid var(--line); display:flex; align-items:center; gap:8px;}
+  .v4-top .n{font-size:20px; font-weight:700; font-variant-numeric:tabular-nums;}
+  .v4-top .l{font-size:11.5px; color:var(--ink-faint);}
+  .v4-top .r{margin-left:auto; text-align:right;}
+  .v4-list{padding:5px 0;}
+  .v4-item{display:flex; align-items:center; gap:8px; padding:6px 13px; font-size:12.5px;}
+  .v4-item .k{color:var(--ink-soft);}
+  .v4-item .v{margin-left:auto; font-weight:600; font-variant-numeric:tabular-nums;}
+  .v4-item .v.attn{color:var(--upd-text);}
+  .v4-item a{color:var(--brand); text-decoration:none;}
+  .v4-acts{display:flex; gap:6px; padding:9px 13px; border-top:1px solid var(--line); flex-wrap:wrap;}
+  .v4-acts .btn{margin:0; width:auto; flex:1; min-width:96px;}
+  .v4-foot{padding:9px 13px; border-top:1px solid var(--line); font-size:11.5px; color:var(--ink-faint);
+           display:flex; align-items:center; gap:7px;}
+</style>
+</head>
+<body>
+
+<div class="doc"><div class="doc-in">
+  <h1>Variations on C — routine visible, the rest behind labelled drawers</h1>
+  <p>Same structure throughout: the glossary, what needs a decision, what is unpublished, and whether the
+     work is safe — with anything that <em>replaces</em> work kept behind a heading that says so. What
+     changes is the shape: how the numbers are presented, how much shows at rest, and how loudly the panel
+     signals that something needs doing.</p>
+</div></div>
+
+<div class="wrap"><div class="cols">
+
+<!-- ================= V1 ================= -->
+<div class="opt">
+  <span class="opt-tag">C1</span>
+  <h2>Verdict banner, numbers in a grid</h2>
+  <p>A coloured band at the top answers "is anything wrong?" before you read anything. The four counts
+     become a grid rather than a list, which halves the height they take.</p>
+
+  <div class="rail">
+    <div class="v1-band attn">
+      <div class="v1-h"><span class="dot a"></span> 1 term needs a decision</div>
+      <div class="v1-t"><span>Published</span><span class="when">version 4 · 9:41 PM</span></div>
+      <div class="v1-t"><span>Saved online</span><span class="when">10:16 PM</span></div>
+      <div class="v1-t"><span>Backup file</span><span class="when">4:02 PM</span></div>
+    </div>
+
+    <div class="v1-grid">
+      <div class="v1-cell"><div class="v1-n">8,397</div><div class="v1-l">Terms</div></div>
+      <div class="v1-cell"><div class="v1-n"><a href="#">9</a></div><div class="v1-l">Term types</div></div>
+      <div class="v1-cell"><div class="v1-n"><a href="#">17</a></div><div class="v1-l">Focus areas</div></div>
+      <div class="v1-cell"><div class="v1-n"><a href="#">11</a></div><div class="v1-l">Sources</div></div>
+    </div>
+
+    <div class="v1-pad">
+      <button class="btn warn">Review the 1 issue</button>
+      <button class="btn">Manage classifications</button>
+      <button class="btn">See what changed</button>
+      <button class="btn">Save draft now</button>
+    </div>
+
+    <details class="dr"><summary>Backups &amp; earlier versions</summary>
+      <div class="body"><p class="hint">A backup is one file on your computer holding the draft,
+        the classifications and the release history.</p>
+        <button class="btn sm">Download a backup</button>
+        <button class="btn sm">Restore from a backup…</button>
+        <button class="btn sm">Past versions (4)</button></div></details>
+    <details class="dr"><summary>Replace what is in this browser</summary>
+      <div class="body"><p class="hint">These discard what is here. Save the draft first if it is ahead.</p>
+        <button class="btn sm">Load the online copy…</button>
+        <button class="btn sm">Import a change-set…</button>
+        <button class="btn sm quiet">Sign out — Perry Williams</button></div></details>
+  </div>
+
+  <p class="note"><b>Trade-off:</b> loudest at a glance, and the band turns green when there is nothing to
+     do. The stat grid is compact but the numbers lose their alignment with each other.</p>
+</div>
+
+<!-- ================= V2 ================= -->
+<div class="opt">
+  <span class="opt-tag">C2</span>
+  <h2>Coloured edge per section</h2>
+  <p>Each section carries a thin left bar in its own state colour — green when settled, amber when it wants
+     attention. The eye finds the amber one without reading a word.</p>
+
+  <div class="rail">
+    <div class="v2-sec neutral">
+      <div class="v2-h"><span class="t">The glossary</span><span class="c">8,397</span></div>
+      <div class="v2-row"><a href="#">Term types</a><b>9</b></div>
+      <div class="v2-row"><a href="#">Focus areas</a><b>17</b></div>
+      <div class="v2-row"><a href="#">Sources</a><b>11</b></div>
+      <button class="btn sm">Manage classifications</button>
+    </div>
+
+    <div class="v2-sec attn">
+      <div class="v2-h"><span class="t">Needs a decision</span><span class="c attn">1</span></div>
+      <div class="v2-say">Flagged during review. None can be corrected automatically.</div>
+      <button class="btn sm warn">Review</button>
+    </div>
+
+    <div class="v2-sec ok">
+      <div class="v2-h"><span class="t">Unpublished</span><span class="c">0</span></div>
+      <div class="v2-say">The draft matches published version 4.</div>
+      <button class="btn sm">See what changed</button>
+    </div>
+
+    <div class="v2-sec ok">
+      <div class="v2-h"><span class="t">Your work is safe</span></div>
+      <div class="v2-row"><span>Saved online</span><b class="when">10:16 PM</b></div>
+      <div class="v2-row"><span>Backup file</span><b class="when">4:02 PM</b></div>
+      <div class="v2-say" style="margin-top:7px;">Saves itself every hour, as <b>Perry Williams</b>.</div>
+      <button class="btn sm">Save draft now</button>
+    </div>
+
+    <details class="dr"><summary>Backups &amp; earlier versions</summary>
+      <div class="body">
+        <button class="btn sm">Download a backup</button>
+        <button class="btn sm">Restore from a backup…</button>
+        <button class="btn sm">Past versions (4)</button></div></details>
+    <details class="dr"><summary>Replace what is in this browser</summary>
+      <div class="body"><p class="hint">These discard what is here.</p>
+        <button class="btn sm">Load the online copy…</button>
+        <button class="btn sm">Import a change-set…</button>
+        <button class="btn sm quiet">Sign out</button></div></details>
+  </div>
+
+  <p class="note"><b>Trade-off:</b> state is readable peripherally and the big number per section gives each
+     one an anchor. Four colours at once can look busy when several want attention.</p>
+</div>
+
+<!-- ================= V3 ================= -->
+<div class="opt">
+  <span class="opt-tag">C3</span>
+  <h2>One line each, opened on demand</h2>
+  <p>Every section collapses to a single row carrying its headline number. Only what needs attention is
+     open at rest. Shortest panel by far, so the term list gets the screen.</p>
+
+  <div class="rail">
+    <div class="v3-row"><span class="lbl">The glossary</span><span class="val">8,397 terms</span></div>
+
+    <div class="v3-row" style="border-bottom:none;"><span class="dot a"></span>
+      <span class="lbl">Needs a decision</span><span class="val attn">1</span></div>
+    <div class="v3-open"><div class="inner">
+      <div class="v3-mini"><span>Flagged</span><b>1</b></div>
+      <div class="v3-mini"><span>Fixable automatically</span><b>0</b></div>
+      <button class="btn sm warn">Review</button>
+    </div></div>
+
+    <div class="v3-row"><span class="dot g"></span>
+      <span class="lbl">Unpublished</span><span class="val">none · v4 live</span></div>
+
+    <div class="v3-row"><span class="dot g"></span>
+      <span class="lbl">Your work is safe</span><span class="val when">saved 10:16 PM</span></div>
+
+    <details class="dr"><summary>Backups &amp; earlier versions</summary>
+      <div class="body"><p class="hint">Backup file downloaded 8 Sep, 4:02 PM.</p>
+        <button class="btn sm">Download a backup</button>
+        <button class="btn sm">Restore from a backup…</button>
+        <button class="btn sm">Past versions (4)</button></div></details>
+    <details class="dr"><summary>Replace what is in this browser</summary>
+      <div class="body"><p class="hint">These discard what is here.</p>
+        <button class="btn sm">Load the online copy…</button>
+        <button class="btn sm">Import a change-set…</button></div></details>
+    <details class="dr"><summary>Perry Williams</summary>
+      <div class="body"><p class="hint">Signed in. Saves itself every hour.</p>
+        <button class="btn sm">Save draft now</button>
+        <button class="btn sm quiet">Sign out</button></div></details>
+  </div>
+
+  <p class="note"><b>Trade-off:</b> by far the most list space, and attention goes where it is wanted.
+     But a count you want constantly — unpublished changes during a long editing run — is now a click away.</p>
+</div>
+
+<!-- ================= V4 ================= -->
+<div class="opt">
+  <span class="opt-tag">C4</span>
+  <h2>Dense, one screen, no scrolling</h2>
+  <p>Everything on a single short panel: headline number, key–value lines, one row of actions. Nothing
+     collapses except the two drawers, so nothing is hidden that is looked at weekly.</p>
+
+  <div class="rail">
+    <div class="v4-top">
+      <div><div class="n">8,397</div><div class="l">terms in the glossary</div></div>
+      <div class="r"><div class="n" style="color:var(--upd-text)">1</div><div class="l">needs a decision</div></div>
+    </div>
+
+    <div class="v4-list">
+      <div class="v4-item"><span class="k"><a href="#">Term types</a></span><span class="v">9</span></div>
+      <div class="v4-item"><span class="k"><a href="#">Focus areas</a></span><span class="v">17</span></div>
+      <div class="v4-item"><span class="k"><a href="#">Sources</a></span><span class="v">11</span></div>
+      <div class="v4-item" style="border-top:1px solid var(--line-soft); margin-top:5px; padding-top:9px;">
+        <span class="k">Unpublished changes</span><span class="v">none</span></div>
+      <div class="v4-item"><span class="k">Published</span><span class="v when">v4 · 9:41 PM</span></div>
+      <div class="v4-item"><span class="k">Saved online</span><span class="v when">10:16 PM</span></div>
+      <div class="v4-item"><span class="k">Backup file</span><span class="v when">4:02 PM</span></div>
+    </div>
+
+    <div class="v4-acts">
+      <button class="btn sm warn">Review 1</button>
+      <button class="btn sm">Changes</button>
+      <button class="btn sm">Classifications</button>
+      <button class="btn sm">Save draft</button>
+    </div>
+
+    <details class="dr"><summary>Backups &amp; earlier versions</summary>
+      <div class="body">
+        <button class="btn sm">Download a backup</button>
+        <button class="btn sm">Restore from a backup…</button>
+        <button class="btn sm">Past versions (4)</button></div></details>
+    <details class="dr"><summary>Replace what is in this browser</summary>
+      <div class="body"><p class="hint">These discard what is here.</p>
+        <button class="btn sm">Load the online copy…</button>
+        <button class="btn sm">Import a change-set…</button></div></details>
+
+    <div class="v4-foot"><span class="dot g"></span> Perry Williams · saves hourly ·
+      <a href="#" style="color:var(--brand); text-decoration:none;">sign out</a></div>
+  </div>
+
+  <p class="note"><b>Trade-off:</b> every fact visible with no scrolling and no clicking, which suits a
+     facilitator who checks the same four numbers each time. The least forgiving if the panel ever grows.</p>
+</div>
+
+</div>
+
+<div style="max-width:1560px; margin:40px auto 0; padding:0 24px;">
+  <h2 style="font-size:16px; margin:0 0 8px;">Choosing between them</h2>
+  <p style="font-size:13px; color:var(--ink-soft); line-height:1.7; max-width:940px; margin:0 0 9px;">
+    <b>C1</b> and <b>C2</b> put effort into signalling state; <b>C3</b> and <b>C4</b> put it into saving
+    space. If the facilitator works in long sessions with the term list open, C3 gives the most room. If
+    they dip in to check whether anything needs doing, C1 answers that before they read.</p>
+  <p style="font-size:13px; color:var(--ink-soft); line-height:1.7; max-width:940px; margin:0;">
+    All four keep the same two drawers, and all four show the backup with a time. They can also be mixed —
+    C1's banner sits fine on top of C4's dense body, for instance.</p>
+</div>
+</div>
+
+</body>
+</html>
