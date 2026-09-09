@@ -640,6 +640,18 @@ const COLS=UPLOAD_COLS;                                   // change-set shape
 const MASTER_COLS=[...UPLOAD_COLS.filter(c=>c!=='Action'),...LOCAL_COLS];
 const FULL_COLS=[...UPLOAD_COLS.filter(c=>c!=='Action'),...LOCAL_COLS,'Action'];
 
+/* What leaves the console. Links are written as term names, not IDs: a UUID is
+   unreadable in a spreadsheet and useless to anyone without this tool. Names are
+   unique across the glossary, so they resolve back on import. */
+const AKA_COL='Also Known As (AKA)', REL_COL='Related Terms';
+const EXPORT_COLS=[...UPLOAD_COLS.filter(c=>c!=='Action'), AKA_COL, REL_COL];
+const CHANGESET_COLS=[...EXPORT_COLS,'Action'];
+const linkNamesOf=v=>splitMulti(v).map(id=>{const t=termById(id); return t?t.Term:id;}).join('|');
+const exportRow=r=>({
+  ...Object.fromEntries(UPLOAD_COLS.filter(c=>c!=='Action').map(c=>[c,r[c]??''])),
+  [AKA_COL]:linkNamesOf(r.AKA), [REL_COL]:linkNamesOf(r.Related)
+});
+
 /* Links are stored as pipe-delimited term IDs, not names: a term can be renamed
    without silently breaking every reference to it. Names are resolved for display. */
 const LINK_FIELDS=[
@@ -1269,8 +1281,19 @@ async function loadChangeSet(text){
     alert('This file has no Action column.\n\nImports apply change-sets to the master list, so every row needs an Action of add, update or remove.\n\nFound columns: '+Object.keys(parsed[0]).join(', '));
     return;
   }
+  /* Links arrive as names and are resolved back to IDs. A name that matches no
+     term is kept as written so the import summary can report it rather than the
+     link vanishing without trace. */
+  const idOf=n=>{ const t=master.find(r=>String(r.Term||'').replace(/\s+/g,' ').trim().toLowerCase()
+                                        ===String(n).replace(/\s+/g,' ').trim().toLowerCase());
+                  return t?t.ID:String(n).trim(); };
+  const linksFrom=v=>splitMulti(v).map(idOf).join('|');
+
   const rows=parsed.map((r,i)=>{
     const o=Object.fromEntries(COLS.map(c=>[c,r[c]??'']));
+    // Accept the exported column names, and the older internal ones.
+    o.AKA     = r[AKA_COL]!==undefined ? linksFrom(r[AKA_COL]) : (r.AKA??'');
+    o.Related = r[REL_COL]!==undefined ? linksFrom(r[REL_COL]) : (r.Related??'');
     o._a=String(o.Action||'').trim().toLowerCase(); o._i=i+2;
     o._problems=IMPORT_CHECKS.filter(c=>{try{return c.bad(o);}catch(e){return false;}}).map(c=>c.msg);
     return o;
@@ -1297,7 +1320,9 @@ function renderImportSummary(rows){
   const b=$('btnStageImport');
   if(b) b.onclick=async()=>{
     ok.forEach(r=>{
-      const data=Object.fromEntries(COLS.map(c=>[c,r[c]]));
+      // MASTER_COLS, not COLS: the upload columns stop at FocusArea, so building
+      // the staged row from them dropped the links the import had just resolved.
+      const data=Object.fromEntries(MASTER_COLS.map(c=>[c,r[c]??'']));
       if(r._a==='add'){ data.ID=''; staged['new:'+(newCounter++)]={action:'add',data,origin:'import'}; }
       else staged[r.ID]={action:r._a,data,origin:'import'};
     });
@@ -1781,7 +1806,7 @@ function classificationEdits(){
 
 function exportChanges(){
   const rows=Object.values(staged).map(s=>{
-    const o=Object.fromEntries(COLS.map(c=>[c,s.data[c]??''])); o.Action=s.action;
+    const o={...exportRow(s.data), Action:s.action};
     if(s.action==='add') o.ID='';   // enforced again at the boundary
     return o;
   });
@@ -1790,7 +1815,7 @@ function exportChanges(){
   // once: the staged version, which is the later of the two.
   for(const r of classificationEdits()){
     if(seen.has(r.ID)) continue;
-    rows.push({...Object.fromEntries(COLS.map(c=>[c,r[c]??''])), Action:'update'});
+    rows.push({...exportRow(r), Action:'update'});
     seen.add(r.ID);
   }
   if(!rows.length){ alert('There is nothing to export.'); return; }
@@ -1798,19 +1823,13 @@ function exportChanges(){
       `${vocabPending.length} classification change(s) are staged but not applied.\n\n`
       +`The terms they will rewrite are not in this file, because they have not been `
       +`rewritten yet. Apply them first if you want them included.\n\nExport anyway?`)) return;
-  download(`GlossaryChangeSet_${stamp()}.csv`, toCSV(rows,COLS));
+  download(`GlossaryChangeSet_${stamp()}.csv`, toCSV(rows,CHANGESET_COLS));
 }
 /* Full export includes AKA/Related; change-sets cannot, since the upload schema
    has no column for them. Link IDs are emitted alongside readable names so the
    file is usable without this console. */
 function exportFull(){
-  const byId=new Map(master.map(r=>[r.ID,r.Term]));
-  const cols=[...FULL_COLS,'AKA_Names','Related_Names'];
-  const names=v=>splitMulti(v).map(id=>byId.get(id)||id).join('|');
-  download(`GlossaryItems_${stamp()}.csv`, toCSV(master.map(r=>({
-    ...Object.fromEntries(FULL_COLS.map(c=>[c,c==='Action'?'':(r[c]??'')])),
-    AKA_Names:names(r.AKA), Related_Names:names(r.Related)
-  })),cols));
+  download(`GlossaryItems_${stamp()}.csv`, toCSV(master.map(exportRow), EXPORT_COLS));
 }
 /* The browse table renders the master list in array order, so an appended term
    lands on the last page — page 840 at current size. Somebody adding a term
@@ -2388,11 +2407,10 @@ function draftDiff(){
    so no local flag is needed - and their ID is blanked because the glossary
    system assigns the real one. */
 function buildChangeSet(d){
-  const pick=r=>Object.fromEntries(COLS.map(c=>[c,r[c]??'']));
   return [
-    ...d.added.map(x=>({...pick(x.row),ID:'',Action:'add'})),
-    ...d.edited.map(x=>({...pick(x.row),Action:'update'})),
-    ...d.removed.map(x=>({...pick(x.row),Action:'remove'}))
+    ...d.added.map(x=>({...exportRow(x.row),ID:'',Action:'add'})),
+    ...d.edited.map(x=>({...exportRow(x.row),Action:'update'})),
+    ...d.removed.map(x=>({...exportRow(x.row),Action:'remove'}))
   ];
 }
 
@@ -2455,7 +2473,7 @@ async function publishVersion(){
     +`\n\nOptional note for the release record:`,'');
   if(note===null) return;
   const rows=buildChangeSet(d);
-  download(`GlossaryChangeSet_v${version}_${stamp()}.csv`, toCSV(rows,COLS));
+  download(`GlossaryChangeSet_v${version}_${stamp()}.csv`, toCSV(rows,CHANGESET_COLS));
 
   // When the repository is connected it is the system of record, so publishing
   // means committing data/glossary.json — that commit is what updates the public
@@ -2537,15 +2555,8 @@ const BACKUP_FORMAT = 1;
    hour with full history — that is the real safety net, and this file's job is
    to be a readable copy of the glossary rather than a console snapshot. */
 async function exportBackup(){
-  const byId=new Map(master.map(r=>[r.ID,r.Term]));
-  const names=v=>splitMulti(v).map(id=>byId.get(id)||id).join('|');
-  const cols=[...FULL_COLS,'AKA_Names','Related_Names'];
-  const rows=master.map(r=>({
-    ...Object.fromEntries(FULL_COLS.map(c=>[c,c==='Action'?'':(r[c]??'')])),
-    AKA_Names:names(r.AKA), Related_Names:names(r.Related)
-  }));
   lastBackupAt=new Date().toISOString(); await persist(); renderRail();
-  download(`GlossaryBackup_${stamp()}.csv`, toCSV(rows,cols));
+  download(`GlossaryBackup_${stamp()}.csv`, toCSV(master.map(exportRow), EXPORT_COLS));
 }
 async function restoreBackup(file){
   const text=await file.text();
@@ -3348,7 +3359,10 @@ $('vocabChanges').onclick=e=>{
 };
 $('releaseList').onclick=e=>{const d=e.target.closest('[data-redl]');
   if(d){const rel=releases.find(x=>x.version===+d.dataset.redl);
-    if(rel) download(`GlossaryChangeSet_v${rel.version}.csv`, toCSV(rel.changeSet,COLS));}};
+    // Older releases were stored with the previous columns; write whichever the
+    // stored rows actually carry so a re-download is not silently blank.
+    if(rel) download(`GlossaryChangeSet_v${rel.version}.csv`,
+      toCSV(rel.changeSet, (rel.changeSet[0] && AKA_COL in rel.changeSet[0]) ? CHANGESET_COLS : COLS));}};
 $('btnResync').onclick=async()=>{
   const f=$('resyncFile').files[0];
   if(!f){ alert('Choose the official glossary export first.'); return; }

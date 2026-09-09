@@ -98,9 +98,10 @@ as a fallback for working offline.
    match the other two fields, but MISMO's published Term Type page states every term
    gets one and only one. Currently no row in the data uses more than one, so a revert
    is cheap. Unresolved.
-6. **AKA and Related have no column in the upload format.** They travel in the full
-   export and the console backup, never in a change-set. Extending MISMO's upload
-   schema to carry them is a change worth planning for.
+6. ~~**AKA and Related have no column in the upload format.**~~ Resolved. Exports and
+   change-sets now carry `Also Known As (AKA)` and `Related Terms`, written as term
+   names rather than IDs so they are readable in a spreadsheet, and resolved back to
+   IDs on import. Names are unique across the glossary, which is what makes that safe.
 7. **Which names should carry a trademark symbol.** Needs the list of registered
    marks and the house rule for how often to mark them. See the scope note at the end
    of `docs/encoding.md`.

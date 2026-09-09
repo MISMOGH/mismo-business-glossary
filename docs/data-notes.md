@@ -130,6 +130,23 @@ Note that **none of these are fixed in `data/glossary.json`** — it is a faithf
 extraction of the baseline. Fixes belong in the console, which stages them for
 individual approval, followed by a re-export.
 
+## Export columns
+
+Everything the console writes uses the same eight columns, with `Action` added for a
+change-set:
+
+```
+ID, Term, Definition, Source, TermType, FocusArea, Also Known As (AKA), Related Terms
+```
+
+The two link columns hold **term names**, not IDs. A UUID is unreadable in a spreadsheet
+and useless to anyone without the console; names are unique across the glossary, so they
+resolve back to IDs on import. A name that matches no term is kept as written and
+reported in the import summary rather than disappearing.
+
+Internally the links are still stored as IDs, so renaming a term does not break them.
+The names appear only at the file boundary.
+
 ## Links inside definitions
 
 A definition may link to another glossary term or to a web address. The syntax is plain
