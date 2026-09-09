@@ -281,12 +281,12 @@
      A spotlight rather than a wall of text: each step points at the thing it
      is describing, because "the panel on the left" means nothing until you can
      see which panel is meant. */
-  .tour-spot{position:absolute; border-radius:10px; pointer-events:none; z-index:2000;
+  .tour-spot{position:fixed; border-radius:10px; pointer-events:none; z-index:2000;
     box-shadow:0 0 0 4px rgba(18,93,171,.35), 0 0 0 9999px rgba(16,27,51,.62);
     transition:top .28s cubic-bezier(.4,0,.2,1), left .28s cubic-bezier(.4,0,.2,1),
                width .28s cubic-bezier(.4,0,.2,1), height .28s cubic-bezier(.4,0,.2,1);}
   .tour-spot.center{box-shadow:0 0 0 9999px rgba(16,27,51,.62);}
-  .tour-card{position:absolute; z-index:2001; width:352px; max-width:calc(100vw - 32px);
+  .tour-card{position:fixed; z-index:2001; width:352px; max-width:calc(100vw - 32px);
     background:var(--card); border-radius:14px; padding:18px 19px 15px;
     box-shadow:0 18px 48px rgba(16,27,51,.28); transition:top .28s cubic-bezier(.4,0,.2,1),
     left .28s cubic-bezier(.4,0,.2,1);}
@@ -304,7 +304,11 @@
   .tour-dot{width:6px; height:6px; border-radius:50%; background:var(--line); cursor:pointer;}
   .tour-dot.on{background:var(--brand); transform:scale(1.25);}
   .tour-dot.done{background:#B6CBE2;}
-  .tour-skip{position:fixed; top:16px; right:18px; z-index:2002;}
+    .tour-skip{position:fixed; top:16px; left:18px; z-index:2012;}
+  .tour-card{z-index:2010;}
+  /* A modal being demonstrated has to sit above the dimming shadow but below
+     the tour card, or the step explaining it is hidden behind it. */
+  .modal-bg.tour-lift{z-index:2005;}
   @media (prefers-reduced-motion:reduce){ .tour-spot,.tour-card{transition:none;} }
 
   /* ---- hover tooltip ---- */
@@ -1764,31 +1768,31 @@ const TOUR=[
      <p>Click any of the three to open that list, or <strong>Manage classifications</strong> to add,
      rename or remove values.</p>`},
 
-  {sel:'#railIssues', title:'Things flagged for review',
+  {sel:'#secIssues', title:'Things flagged for review',
    body:`<p>The console checks the glossary for problems: stray spaces, line breaks inside a field,
      damaged characters, values outside the controlled lists.</p>
      <p>Most come with a suggested correction you approve individually, or all at once by class.
      <strong>Nothing changes until you approve it.</strong></p>`},
 
-  {sel:'#railDraft', title:'Unpublished changes',
+  {sel:'#secUnpublished', title:'Unpublished changes',
    body:`<p>Your edits collect in a <strong>draft</strong>. This counts what differs from the last
      published version — added, edited and removed terms.</p>
      <p><strong>See what changed</strong> lists them one by one, each with its own Revert, so a
      single mistake does not cost you the rest of the session.</p>`},
 
-  {sel:'#railSave', title:'Your work is safe',
+  {sel:'#secSafe', title:'Your work is safe',
    body:`<p>The draft saves itself online every hour, and <strong>Save draft now</strong> forces it.
      That is the real safety net — a lost laptop costs you an hour at most.</p>
      <p>A <strong>backup</strong> is a different thing: one file downloaded to your own computer.
      Both timestamps are shown so you can see if either has gone stale.</p>`},
 
-  {sel:'#drBackups', title:'Backups and earlier versions',
+  {sel:'#drBackups', title:'Backups and earlier versions', drawer:'drBackups',
    body:`<p>Every published version is kept. <strong>Past versions</strong> lets you download the
      change-set for any release again.</p>
      <p>A backup file holds the draft, the classifications and the release history together — it is
      what you would hand to whoever takes this over.</p>`},
 
-  {sel:'#drReplace', title:'The drawer to be careful with',
+  {sel:'#drReplace', title:'The drawer to be careful with', drawer:'drReplace',
    body:`<p>These all <strong>replace what is in this browser</strong>: loading the online copy,
      importing a change-set, restoring a backup.</p>
      <p>Each is useful and each discards unsaved work, which is why they sit behind a heading that
@@ -1805,7 +1809,14 @@ const TOUR=[
      <p>Neither takes effect immediately. Changes are <strong>staged</strong> first, checked, then
      applied to the draft when you are ready — so you can queue a batch and review it as a set.</p>`},
 
-  {sel:'#exportCard', title:'Pending changes',
+  {sel:'#modalBg .modal', title:'What editing a term looks like', demo:'edit',
+   body:`<p>This is the form. The definition is free text; the three classifications are chosen from
+     the controlled lists, and <strong>Also known as</strong> and <strong>Related terms</strong> link
+     to other terms rather than repeating their names.</p>
+     <p>Saving here does not change the glossary — it <strong>stages</strong> the edit for review. The
+     term stays exactly as it was until you apply it.</p>`},
+
+  {sel:'#exportCard', title:'Pending changes', demo:'stage',
    body:`<p>Anything staged appears here showing what it will change, old value beside new. It is
      only on screen when something is waiting.</p>
      <p>Six checks run before anything can be applied — hover <strong>What is checked</strong> to
@@ -1828,6 +1839,46 @@ let tourAt=0, tourSteps=[], tourOn=false;
 /* Offered from both boot paths. It previously hung off the branch that restores
    saved work, which is the one path a first-time user never takes — so the
    people the tour exists for were the only ones who never saw it. */
+/* Some steps show something rather than describing it: a drawer is opened, a
+   term is opened for editing, an example edit is staged. Each is undone when
+   the step is left, and again if the tour is closed part-way, so the tour never
+   leaves anything behind. The staged example is held in memory only — persist()
+   is not called and the hourly save is suspended while the tour is running. */
+let tourDemo={key:null, prev:null, drawer:null, modal:false};
+
+function tourEnter(step){
+  if(step.drawer){
+    const el=$(step.drawer);
+    if(el && !el.open){ el.open=true; tourDemo.drawer=step.drawer; }
+  }
+  if(step.demo==='edit'){
+    const t=master.find(r=>!staged[r.ID]) || master[0];
+    if(t){ openEdit(t.ID); tourDemo.modal=true; $('modalBg').classList.add('tour-lift'); }
+  }
+  if(step.demo==='stage'){
+    const t=master.find(r=>!staged[r.ID]);
+    if(t){
+      tourDemo.key=t.ID; tourDemo.prev=staged[t.ID];
+      staged[t.ID]={action:'update', origin:'manual',
+        data:{...t, Definition:'An example edit, added by the tour and removed when it moves on.'}};
+      renderAll();
+    }
+  }
+}
+
+function tourExit(){
+  if(tourDemo.drawer){ const el=$(tourDemo.drawer); if(el) el.open=false; tourDemo.drawer=null; }
+  if(tourDemo.modal){
+    $('modalBg').classList.remove('tour-lift');
+    closeModal(); tourDemo.modal=false;
+  }
+  if(tourDemo.key){
+    if(tourDemo.prev) staged[tourDemo.key]=tourDemo.prev; else delete staged[tourDemo.key];
+    tourDemo.key=null; tourDemo.prev=null;
+    renderAll();
+  }
+}
+
 async function maybeOfferTour(){
   if(await idbGet('tourSeen')) return;
   setTimeout(()=>{ if(!tourOn) startTour(); },800);
@@ -1843,9 +1894,12 @@ const tourVisible=sel=>{
 
 function startTour(){
   // Rebuilt each time: which sections exist depends on the state of the work.
-  tourSteps=TOUR.filter(s=>tourVisible(s.sel));
+  // A step with a demo creates its own target — the edit form is not open and
+  // the pending panel does not exist until the step opens them — so those are
+  // exempt from the visibility filter that skips steps pointing at nothing.
+  tourSteps=TOUR.filter(s=>s.demo||tourVisible(s.sel));
   if(!tourSteps.length) return;
-  tourAt=0; tourOn=true;
+  tourAt=0; tourOn=true; tourDemo={key:null,prev:null,drawer:null,modal:false};
   if(!$('tourSpot')){
     document.body.insertAdjacentHTML('beforeend',
       `<div class="tour-spot" id="tourSpot"></div><div class="tour-card" id="tourCard"></div>
@@ -1853,6 +1907,7 @@ function startTour(){
     $('tourSkip').onclick=endTour;
   }
   ['tourSpot','tourCard','tourSkip'].forEach(id=>$(id).style.display='');
+  tourEnter(tourSteps[0]);
   drawTour(true);
   addEventListener('resize',tourReflow);
   addEventListener('scroll',tourReflow,true);
@@ -1860,6 +1915,7 @@ function startTour(){
 }
 
 function endTour(){
+  tourExit();
   tourOn=false;
   ['tourSpot','tourCard','tourSkip'].forEach(id=>{const e=$(id); if(e) e.style.display='none';});
   removeEventListener('resize',tourReflow);
@@ -1878,8 +1934,9 @@ function tourKeys(e){
 function tourGo(d){
   const n=tourAt+d;
   if(n<0) return;
+  tourExit();
   if(n>=tourSteps.length){ endTour(); return; }
-  tourAt=n; drawTour(true);
+  tourAt=n; tourEnter(tourSteps[tourAt]); drawTour(true);
 }
 
 function drawTour(scroll){
@@ -1887,7 +1944,10 @@ function drawTour(scroll){
   const step=tourSteps[tourAt], spot=$('tourSpot'), card=$('tourCard');
   const el=step.sel?document.querySelector(step.sel):null;
 
-  if(el && scroll){
+  // A fixed-position target — a modal — is already where it is going to be, and
+  // scrolling the page under it only moves everything else.
+  const fixed=el && getComputedStyle(el.closest('.modal-bg')||el).position==='fixed';
+  if(el && scroll && !fixed){
     const r=el.getBoundingClientRect();
     if(r.top<90||r.bottom>innerHeight-90) el.scrollIntoView({behavior:'smooth',block:'center'});
   }
@@ -1903,32 +1963,40 @@ function drawTour(scroll){
       </div>`;
     $('tourNext').onclick=()=>tourGo(1);
     if($('tourBack')) $('tourBack').onclick=()=>tourGo(-1);
-    card.querySelectorAll('[data-tdot]').forEach(dd=>dd.onclick=()=>{tourAt=+dd.dataset.tdot; drawTour(true);});
+      card.querySelectorAll('[data-tdot]').forEach(dd=>dd.onclick=()=>{
+      tourExit(); tourAt=+dd.dataset.tdot; tourEnter(tourSteps[tourAt]); drawTour(true);});
   }
 
   const place=()=>{
     if(!el){
       spot.className='tour-spot center';
-      spot.style.top=`${scrollY+innerHeight/2}px`; spot.style.left=`${innerWidth/2}px`;
+      spot.style.top=`${innerHeight/2}px`; spot.style.left=`${innerWidth/2}px`;
       spot.style.width='0px'; spot.style.height='0px';
-      card.style.top=`${scrollY+Math.max(70,(innerHeight-card.offsetHeight)/2)}px`;
+      card.style.top=`${Math.max(16,(innerHeight-card.offsetHeight)/2)}px`;
       card.style.left=`${Math.max(16,(innerWidth-352)/2)}px`;
       return;
     }
     const r=el.getBoundingClientRect(), pad=8, w=352, gap=18;
     spot.className='tour-spot';
-    spot.style.top=`${r.top+scrollY-pad}px`;
-    spot.style.left=`${r.left+scrollX-pad}px`;
+    spot.style.top=`${r.top-pad}px`;
+    spot.style.left=`${r.left-pad}px`;
     spot.style.width=`${r.width+pad*2}px`;
     spot.style.height=`${r.height+pad*2}px`;
-    // Right of the target by preference, then left, then below.
-    let left=r.right+gap, top=r.top+scrollY-10;
-    if(left+w>innerWidth-16){
-      left=r.left-w-gap;
-      if(left<16){ left=Math.min(Math.max(16,r.left), innerWidth-w-16); top=r.bottom+scrollY+gap; }
-    }
+    /* Measure the gutters rather than assuming the preferred gap fits. A target
+       as wide as the edit form leaves 370px either side — enough for the card,
+       but not enough for the card plus a gap, and the earlier logic read that
+       as "no room" and dropped the card on top of the thing it was describing. */
     const h=card.offsetHeight||300;
-    if(top+h>scrollY+innerHeight-16) top=Math.max(scrollY+16, scrollY+innerHeight-h-16);
+    const spaceRight=innerWidth-r.right-16, spaceLeft=r.left-16;
+    let left, top=Math.min(Math.max(16, r.top-10), Math.max(16, innerHeight-h-16));
+    if(spaceRight>=w)      left=Math.min(r.right+gap, innerWidth-w-16);
+    else if(spaceLeft>=w)  left=Math.max(16, r.left-gap-w);
+    else{
+      left=Math.min(Math.max(16,r.left), innerWidth-w-16);
+      if(r.bottom+gap+h<=innerHeight-16)   top=r.bottom+gap;
+      else if(r.top-gap-h>=16)             top=r.top-gap-h;
+      else                                 top=Math.max(16, innerHeight-h-16);
+    }
     card.style.left=`${left}px`; card.style.top=`${top}px`;
   };
 
@@ -1936,7 +2004,7 @@ function drawTour(scroll){
   // Placed again once the card has its real height, so a tall step does not
   // hang off the bottom of the window.
   requestAnimationFrame(place);
-  if(scroll) setTimeout(place,340);
+  if(scroll){ setTimeout(place,340); setTimeout(place,520); }
 }
 
 /* ============================================================================ DRAFT / RELEASE
@@ -2386,6 +2454,7 @@ async function repoPublish(note){
    repository's. */
 async function maybeAutoSave(){
   if(!repo||!repoState?.ok) return;
+  if(tourOn) return;            // the tour stages an example; never commit it
   if(repoState.behind) return;              // the repository is ahead; load first
   if(!lastAutoSave && repoState.remoteSavedAt) return;   // never reconciled here
   const d=draftDiff();
@@ -2605,14 +2674,14 @@ function renderRail(){
     </div>
 
     ${open.length?`
-    <div class="rsec2 attn">
+    <div class="rsec2 attn" id="secIssues">
       <div class="rsec2-h"><span class="t">Needs a decision</span><span class="c attn">${open.length.toLocaleString()}</span></div>
       <div class="rsay">Flagged during review. ${fixable
         ? `<b>${fixable.toLocaleString()}</b> can be corrected automatically.`
         : 'None can be corrected automatically.'}</div>
       <button class="btn warn" id="railIssues" style="width:100%; margin-top:8px;">Review</button>
     </div>`:`
-    <div class="rsec2 ok">
+    <div class="rsec2 ok" id="secIssues">
       <div class="rsec2-h"><span class="t">Needs a decision</span><span class="c">0</span></div>
       <div class="rsay">Nothing outstanding.</div>
       <button class="btn" id="railIssues" style="width:100%; margin-top:8px;">Open review</button>
@@ -2626,7 +2695,7 @@ function renderRail(){
       <button class="btn" id="railStaged" style="width:100%; margin-top:8px;">Review pending</button>
     </div>`:''}
 
-    <div class="rsec2 ${d.total?'attn':'ok'}">
+    <div class="rsec2 ${d.total?'attn':'ok'}" id="secUnpublished">
       <div class="rsec2-h"><span class="t">Unpublished</span>
         <span class="c ${d.total?'attn':''}">${d.total.toLocaleString()}</span></div>
       ${d.total?`
@@ -2638,7 +2707,7 @@ function renderRail(){
       ${d.total?`<button class="btn ok" id="railPublish" style="width:100%;"${pendingN?' disabled title="Apply or discard the pending changes first"':''}>Publish version ${version}</button>`:''}
     </div>
 
-    <div class="rsec2 ${connected?(saveAge>=1?'attn':'ok'):'bad'}">
+    <div class="rsec2 ${connected?(saveAge>=1?'attn':'ok'):'bad'}" id="secSafe">
       <div class="rsec2-h"><span class="t">Your work is safe</span></div>
       ${connected?`
         <div class="rrow"><span>Saved online</span><b>${when(lastAutoSave)||'not yet'}</b></div>
