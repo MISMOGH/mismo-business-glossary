@@ -591,6 +591,12 @@ let version=1;          // next version number to publish
 let releases=[];        // [{version, publishedAt, counts, changeSet, note}]
 let vocabLog=[];        // applied classification changes since the last published version
 let vocabPending=[];    // classification changes staged but not yet applied
+/* The descriptions the public page shows for each classification. Held here so
+   that publishing can rewrite data/reference.json alongside the glossary — the
+   panel on the public site is driven by that file, so a vocabulary change that
+   never reaches it leaves the old value showing zero terms and the new one
+   missing entirely. */
+let refDoc={focusAreas:{}, termTypes:{}, sources:{}};
 let vocabCounter=1;
 let stagedFilter='all'; // staged list view: all | add | update | remove
 let touched={};         // ID -> ISO timestamp of when it last changed in the draft
@@ -608,7 +614,8 @@ const $=id=>document.getElementById(id);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const persist=async()=>{ await idbSet('master',master); await idbSet('baseline',baseline);
   await idbSet('version',version); await idbSet('releases',releases); await idbSet('vocabLog',vocabLog);
-  await idbSet('vocabPending',vocabPending); await idbSet('vocabCounter',vocabCounter); await idbSet('touched',touched); await idbSet('lastBackupAt',lastBackupAt);
+  await idbSet('vocabPending',vocabPending); await idbSet('vocabCounter',vocabCounter);
+  await idbSet('refDoc',refDoc); await idbSet('touched',touched); await idbSet('lastBackupAt',lastBackupAt);
   await idbSet('vocab',vocab);
   await idbSet('staged',staged); await idbSet('resolved',resolved); await idbSet('fixCount',fixCount); await idbSet('newCounter',newCounter); };
 
@@ -960,16 +967,24 @@ function stageVocab(op,field,from,to){
    the real vocabulary and every term that carries the value. */
 /* Performing a classification change for real. Shared by applying a staged
    change and by reverting an applied one, so the two can never diverge. */
+const REF_KEY={FocusArea:'focusAreas', TermType:'termTypes', Source:'sources'};
+
 function performVocabOp(op,field,from,to,by,at){
   const f=vfield(field); if(!f) return 0;
+  const rk=REF_KEY[field];
   if(op==='add'){
     if(!vocab[field].includes(to)) vocab[field]=[...vocab[field],to].sort();
+    // A new value has no published description until MISMO writes one. The
+    // public page renders this marker as "no official description available"
+    // rather than inventing text.
+    if(rk&&!(to in refDoc[rk])) refDoc[rk][to]='__UNDOCUMENTED__';
     logVocab('add',field,null,to,{terms:0,staged:0},by,at);
     return 0;
   }
   if(op==='delete'){
     const n=master.filter(r=>cellValues(r,f).includes(from)).length;
     vocab[field]=vocab[field].filter(v=>v!==from);
+    if(rk) delete refDoc[rk][from];
     logVocab('delete',field,from,null,{terms:n,staged:0},by,at);
     return n;
   }
@@ -984,6 +999,12 @@ function performVocabOp(op,field,from,to,by,at){
   Object.values(staged).forEach(x=>{ if(rewrite(x.data)) sn++; });
   const merged=vocab[field].includes(to);
   vocab[field]=[...new Set(vocab[field].map(v=>v===from?to:v))].sort();
+  // Renaming should not lose the description. On a merge the target already has
+  // one, which wins.
+  if(rk&&from in refDoc[rk]){
+    if(!(to in refDoc[rk])) refDoc[rk][to]=refDoc[rk][from];
+    delete refDoc[rk][from];
+  }
   logVocab(merged?'merge':'rename',field,from,to,{terms:n,staged:sn},by,at);
   return n;
 }
@@ -1842,6 +1863,7 @@ async function restoreBackup(file){
 const REPO_DEFAULTS={full:'MISMOGH/mismo-business-glossary', branch:'main'};
 const DATA_PATH='data/glossary.json';
 const DRAFT_PATH='.console/draft.json';
+const REF_PATH='data/reference.json';
 /* Hourly, not daily. A draft commit is about 14KB because it stores only the
    difference from the published version, so a tighter interval costs almost
    nothing — and it shrinks the window of work stranded in a browser nobody can
@@ -1925,7 +1947,7 @@ function buildDraftFile(){
     diff:{added:d.added.map(x=>x.row),
           edited:d.edited.map(x=>x.row),
           removed:d.removed.map(x=>x.row.ID)},
-    vocab, vocabLog, vocabPending, staged, resolved, touched, releases, version, fixCount, newCounter
+    vocab, vocabLog, vocabPending, refDoc, staged, resolved, touched, releases, version, fixCount, newCounter
   });
 }
 function applyDraftFile(payload,baseRows){
@@ -1949,6 +1971,7 @@ function applyDraftFile(payload,baseRows){
   staged=payload.staged||{}; resolved=payload.resolved||{};
   touched=payload.touched||{}; releases=payload.releases||[]; version=payload.version||1;
   vocabLog=payload.vocabLog||[]; vocabPending=payload.vocabPending||[];
+  if(payload.refDoc) refDoc=payload.refDoc;
   fixCount=payload.fixCount||0; newCounter=payload.newCounter||1;
 }
 
@@ -1973,6 +1996,14 @@ async function repoLoad(){
   const rows=parsed.terms.map(t=>({ID:t.id,Term:t.term,Definition:t.definition,
     Source:t.source,TermType:t.termType,FocusArea:t.focusArea,
     AKA:(t.aka||[]).join('|'),Related:(t.related||[]).join('|')}));
+  // Read the published descriptions too, so publishing can rewrite them in step
+  // with the vocabulary instead of leaving the public panel behind.
+  try{
+    const refText=await ghReadFile(REF_PATH);
+    if(refText){ const r=JSON.parse(refText);
+      refDoc={focusAreas:r.focusAreas||{}, termTypes:r.termTypes||{}, sources:r.sources||{}}; }
+  }catch(e){ console.warn('reference.json not read:',e); }
+
   const draftText=await ghReadFile(DRAFT_PATH);
   if(draftText){
     const payload=JSON.parse(draftText);
@@ -2041,7 +2072,21 @@ async function repoPublish(note){
     summary:{added:0,edited:0,removed:0,staged:0,nextVersion:version+1},
     diff:{added:[],edited:[],removed:[]},
     vocab,vocabLog:[],vocabPending:[],staged:{},resolved,touched:{},releases,version:version+1,fixCount,newCounter});
-  return ghCommit([{path:DATA_PATH,content:out},{path:DRAFT_PATH,content:empty}],
+  /* The reference file is rebuilt from the vocabulary, keeping the description
+     for every value that has one and marking the rest undocumented. Values no
+     longer in the vocabulary drop out. Published in the same commit as the
+     glossary so the site can never show a classification list that disagrees
+     with the terms. */
+  const ref={};
+  for(const [field,key] of Object.entries(REF_KEY)){
+    ref[key]={};
+    for(const v of [...vocab[field]].sort())
+      ref[key][v]= (v in (refDoc[key]||{})) ? refDoc[key][v] : '__UNDOCUMENTED__';
+  }
+  const refOut=JSON.stringify(ref,null,2)+'\n';
+
+  return ghCommit([{path:DATA_PATH,content:out},{path:REF_PATH,content:refOut},
+                   {path:DRAFT_PATH,content:empty}],
     `Publish version ${version}${note?` — ${note}`:''}\n\n`
     +`${master.length.toLocaleString()} terms.`
     +(editor?`\nPublished by ${editor}.`:''));
@@ -2636,6 +2681,7 @@ async function bootstrap(force){
         releases=(await idbGet('releases'))||[];
         vocabLog=(await idbGet('vocabLog'))||[];
         vocabPending=(await idbGet('vocabPending'))||[];
+        refDoc=(await idbGet('refDoc'))||{focusAreas:{},termTypes:{},sources:{}};
         vocabCounter=(await idbGet('vocabCounter'))||1;
         touched=(await idbGet('touched'))||{};
         lastBackupAt=(await idbGet('lastBackupAt'))||null;
