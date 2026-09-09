@@ -233,6 +233,50 @@
   .card-head h2{margin:0;}
   .card-head .btn{margin-left:auto;}
 
+  /* ---- rail header: the two headline numbers ---- */
+  .rhd{display:flex; align-items:flex-start; gap:12px; padding:14px 15px 13px;
+       border-bottom:1px solid var(--line);}
+  .rhd .n{font-size:23px; font-weight:700; line-height:1; font-variant-numeric:tabular-nums;}
+  .rhd .l{font-size:11.5px; color:var(--ink-faint); margin-top:4px; line-height:1.35;}
+  .rhd .r{margin-left:auto; text-align:right;}
+  .rhd .r .n{color:var(--upd-text);}
+  .rhd .r.clear .n{color:var(--add-text);}
+  .rhd .split{width:1px; align-self:stretch; background:var(--line); margin:0 2px;}
+
+  .rcls{padding:11px 15px 13px; border-bottom:1px solid var(--line);}
+  .rcls-row{display:flex; justify-content:space-between; align-items:baseline; font-size:13px; padding:4px 0;}
+  .rcls-row button{background:none; border:none; padding:0; font-family:inherit; font-size:13px;
+                   color:var(--brand); cursor:pointer;}
+  .rcls-row button:hover{text-decoration:underline;}
+  .rcls-row b{font-weight:700; font-variant-numeric:tabular-nums;}
+
+  /* ---- state-accented sections ---- */
+  .rsec2{padding:13px 14px 14px; border-bottom:1px solid var(--line); border-left:3px solid transparent;}
+  .rsec2.ok{border-left-color:var(--add);}
+  .rsec2.attn{border-left-color:var(--upd); background:#FFFCF6;}
+  .rsec2.bad{border-left-color:var(--rem); background:#FFFAFA;}
+  .rsec2-h{display:flex; align-items:baseline; gap:8px; margin-bottom:8px;}
+  .rsec2-h .t{font-size:12px; font-weight:700;}
+  .rsec2-h .c{margin-left:auto; font-size:17px; font-weight:700; font-variant-numeric:tabular-nums;}
+  .rsec2-h .c.attn{color:var(--upd-text);}
+  .rrow{display:flex; justify-content:space-between; font-size:12.5px; color:var(--ink-soft); padding:2.5px 0;}
+  .rrow b{color:var(--ink); font-variant-numeric:tabular-nums;}
+  .rsay{font-size:12.5px; color:var(--ink-soft); line-height:1.5;}
+  .rsay b{color:var(--ink);}
+  .rsay .stale{color:var(--upd-text); font-weight:600;}
+
+  /* ---- drawers ---- */
+  details.dr{border-bottom:1px solid var(--line);}
+  details.dr:last-child{border-bottom:none;}
+  details.dr summary{list-style:none; cursor:pointer; padding:10px 14px; font-size:12.5px;
+    font-weight:600; color:var(--ink-soft); display:flex; align-items:center; gap:8px;}
+  details.dr summary::-webkit-details-marker{display:none;}
+  details.dr summary:after{content:'▾'; margin-left:auto; font-size:10px; color:var(--ink-faint);}
+  details.dr[open] summary:after{content:'▴';}
+  details.dr summary:hover{background:var(--paper); color:var(--ink);}
+  details.dr .drbody{padding:2px 14px 13px;}
+  .drhint{font-size:11.5px; color:var(--ink-faint); line-height:1.5; margin:0 0 9px;}
+
   /* ---- hover tooltip ---- */
   .tip{position:relative; display:inline-flex; align-items:center; gap:5px; cursor:help;
        border-bottom:1px dotted var(--ink-soft);}
@@ -2277,107 +2321,130 @@ function closeModal(){ $('modalBg').classList.remove('open'); editingKey=null; }
    Everything that used to be five stacked cards. Written as one function so the
    panel cannot disagree with itself: counts, connection state and the actions
    that depend on them are all derived in one pass. */
+/* The drawers are <details>, and the rail is rebuilt wholesale on every render,
+   so their open state has to live outside the markup or they snap shut every
+   time a count changes. */
+let railDrawers={backups:false, replace:false};
+
 function renderRail(){
   detectIssues();
   const open=issues.filter(i=>resolved[i.id]!=='skipped');
   const fixable=open.filter(i=>i.fixable).length;
   const d=draftDiff();
   const stagedN=Object.keys(staged).length;
+  const pendingN=stagedN+vocabPending.length;
   const connected=repo&&repoState?.ok;
-  const age=lastAutoSave?Math.floor((Date.now()-new Date(lastAutoSave))/86400000):null;
+  const when=t=>t?new Date(t).toLocaleString(undefined,
+      {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):null;
+  const daysSince=t=>t?Math.floor((Date.now()-new Date(t))/86400000):null;
+  const saveAge=daysSince(lastAutoSave), backupAge=daysSince(lastBackupAt);
 
   const cta = (connected && repoState.behind)
-    ? `<div class="rcta"><div class="t">The repository is ahead of this browser</div>
+    ? `<div class="rcta"><div class="t">The online copy is newer</div>
         <div class="d">A newer draft was saved${repoState.remoteEditor?` by ${esc(repoState.remoteEditor)}`:''}
-          on ${new Date(repoState.remoteSavedAt).toLocaleString()}. This browser is showing an older
-          copy${draftDiff().total?' and has unsaved changes of its own':''}.</div>
+          on ${when(repoState.remoteSavedAt)}. This browser is showing an older
+          copy${d.total?' and has changes of its own':''}.</div>
         <button class="btn primary" id="railLoadNewer" style="width:100%">Load the newer draft</button></div>`
     : !repo
     ? `<div class="rcta"><div class="t">Not signed in</div>
-        <div class="d">Changes are being kept in this browser only. Sign in to save the draft
+        <div class="d">Changes are being kept in this browser only. Sign in to save your work online
           and to publish new versions.</div>
         <button class="btn primary" id="railConnect" style="width:100%">Sign in…</button></div>`
     : !repoState?.ok
     ? `<div class="rcta"><div class="t">Cannot reach the repository</div>
-        <div class="d">${esc(repoState?.error||'')}<br>The draft is safe in this browser. Sign in
+        <div class="d">${esc(repoState?.error||'')}<br>Your draft is safe in this browser. Sign in
           again to resume saving.</div>
         <button class="btn primary" id="railConnect" style="width:100%">Sign in again…</button></div>`
     : '';
 
   $('rail').innerHTML = cta + `
-    <div class="rsec">
-      <div class="rk">Glossary</div>
-      <div class="rline"><span>Terms</span><span class="v">${master.length.toLocaleString()}</span></div>
-      <div class="rline"><button data-vocab="TermType">Term types</button><span class="v">${effectiveVocab('TermType').length}</span></div>
-      <div class="rline"><button data-vocab="FocusArea">Focus areas</button><span class="v">${effectiveVocab('FocusArea').length}</span></div>
-      <div class="rline"><button data-vocab="Source">Sources</button><span class="v">${effectiveVocab('Source').length}</span></div>
-      <div class="rbtns"><button class="btn sm" id="railVocab">Manage classifications</button></div>
+    <div class="rhd">
+      <div><div class="n">${master.length.toLocaleString()}</div>
+           <div class="l">terms in the glossary</div></div>
+      <div class="split"></div>
+      <div class="r ${open.length?'':'clear'}">
+        <div class="n">${open.length.toLocaleString()}</div>
+        <div class="l">need${open.length===1?'s':''} a decision</div></div>
     </div>
 
-    <div class="rsec">
-      <div class="rk">Issues</div>
-      ${open.length?`
-        <div class="rline"><span>Open</span><span class="v" style="color:var(--upd-text)">${open.length.toLocaleString()}</span></div>
-        <div class="rline"><span>With a fix</span><span class="v">${fixable.toLocaleString()}</span></div>
-        <div class="rbtns"><button class="btn sm warn" id="railIssues">Review issues</button></div>`
-       :`<div class="rstate"><span class="dot g"></span> Nothing outstanding</div>
-         <div class="rbtns"><button class="btn sm" id="railIssues">Open review</button></div>`}
+    <div class="rcls">
+      <div class="rcls-row"><button data-vocab="TermType">Term types</button><b>${effectiveVocab('TermType').length}</b></div>
+      <div class="rcls-row"><button data-vocab="FocusArea">Focus areas</button><b>${effectiveVocab('FocusArea').length}</b></div>
+      <div class="rcls-row"><button data-vocab="Source">Sources</button><b>${effectiveVocab('Source').length}</b></div>
+      <button class="btn" id="railVocab" style="width:100%; margin-top:8px;">Manage classifications</button>
     </div>
 
-    ${(stagedN||vocabPending.length)?`
-    <div class="rsec">
-      <div class="rk">Pending</div>
-      ${stagedN?`<div class="rline"><span>Staged edits</span><span class="v">${stagedN.toLocaleString()}</span></div>`:''}
-      ${vocabPending.length?`<div class="rline"><span>Classification changes</span><span class="v" style="color:var(--upd-text)">${vocabPending.length}</span></div>`:''}
+    ${open.length?`
+    <div class="rsec2 attn">
+      <div class="rsec2-h"><span class="t">Needs a decision</span><span class="c attn">${open.length.toLocaleString()}</span></div>
+      <div class="rsay">Flagged during review. ${fixable
+        ? `<b>${fixable.toLocaleString()}</b> can be corrected automatically.`
+        : 'None can be corrected automatically.'}</div>
+      <button class="btn warn" id="railIssues" style="width:100%; margin-top:8px;">Review</button>
+    </div>`:`
+    <div class="rsec2 ok">
+      <div class="rsec2-h"><span class="t">Needs a decision</span><span class="c">0</span></div>
+      <div class="rsay">Nothing outstanding.</div>
+      <button class="btn" id="railIssues" style="width:100%; margin-top:8px;">Open review</button>
+    </div>`}
 
-      ${stagedN?`<div class="rstate" style="margin-top:5px;">Staged edits are not in the draft yet.</div>`:''}
-      <div class="rbtns"><button class="btn sm" id="railStaged">Review pending</button></div>
+    ${pendingN?`
+    <div class="rsec2 attn">
+      <div class="rsec2-h"><span class="t">Not applied yet</span><span class="c attn">${pendingN.toLocaleString()}</span></div>
+      ${stagedN?`<div class="rrow"><span>Staged term edits</span><b>${stagedN.toLocaleString()}</b></div>`:''}
+      ${vocabPending.length?`<div class="rrow"><span>Classification changes</span><b>${vocabPending.length}</b></div>`:''}
+      <button class="btn" id="railStaged" style="width:100%; margin-top:8px;">Review pending</button>
     </div>`:''}
 
-    <div class="rsec">
-      <div class="rk">Unpublished</div>
+    <div class="rsec2 ${d.total?'attn':'ok'}">
+      <div class="rsec2-h"><span class="t">Unpublished</span>
+        <span class="c ${d.total?'attn':''}">${d.total.toLocaleString()}</span></div>
       ${d.total?`
-        <div class="rline"><span>Added</span><span class="v" style="color:var(--add-text)">${d.added.length.toLocaleString()}</span></div>
-        <div class="rline"><span>Edited</span><span class="v" style="color:var(--upd-text)">${d.edited.length.toLocaleString()}</span></div>
-        <div class="rline"><span>Removed</span><span class="v" style="color:var(--rem-text)">${d.removed.length.toLocaleString()}</span></div>
-        <div class="rbtns">
-          <button class="btn sm" id="railDraft">Review changes</button>
-          <button class="btn ok" id="railPublish"${(stagedN||vocabPending.length)?' disabled title="Apply or discard the staged changes first"':''}>Publish version ${version}</button>
-        </div>`
-       :`<div class="rstate"><span class="dot g"></span> Matches published version${version>1?` ${version-1}`:''}</div>
-         <div class="rbtns"><button class="btn sm" id="railDraft">Review changes</button></div>`}
+        <div class="rrow"><span>Added</span><b>${d.added.length.toLocaleString()}</b></div>
+        <div class="rrow"><span>Edited</span><b>${d.edited.length.toLocaleString()}</b></div>
+        <div class="rrow"><span>Removed</span><b>${d.removed.length.toLocaleString()}</b></div>`
+       :`<div class="rsay">The draft matches ${version>1?`published version ${version-1}`:'the shipped baseline'}.</div>`}
+      <button class="btn" id="railDraft" style="width:100%; margin-top:8px;">See what changed</button>
+      ${d.total?`<button class="btn ok" id="railPublish" style="width:100%;"${pendingN?' disabled title="Apply or discard the pending changes first"':''}>Publish version ${version}</button>`:''}
     </div>
 
-    <div class="rsec">
-      <div class="rk">Repository</div>
+    <div class="rsec2 ${connected?(saveAge>=1?'attn':'ok'):'bad'}">
+      <div class="rsec2-h"><span class="t">Your work is safe</span></div>
       ${connected?`
-        <div class="rstate"><span class="dot g"></span> Signed in${editor?` as ${esc(editor)}`:''}</div>
-        <div class="rstate" style="margin-top:5px;">
-          ${lastAutoSave
-            ? `Draft saved ${new Date(lastAutoSave).toLocaleString()}${age>=1?` <strong style="color:var(--upd-text)">— ${age} day(s) ago</strong>`:''}`
-            : 'Draft not yet saved here.'}</div>
-        <div class="rbtns">
-          <button class="btn sm" id="railSave">Save draft now</button>
-          <button class="btn sm" id="railLoad">Load from repository</button>
-          <button class="btn sm" id="railVersions">Versions${releases.length?` (${releases.length})`:''}</button>
-        </div>`
-       :`<div class="rstate"><span class="dot ${repo?'r':'a'}"></span> ${repo?'Disconnected':'Not signed in'}</div>
-         <div class="rbtns"><button class="btn sm" id="railVersions">Versions${releases.length?` (${releases.length})`:''}</button></div>`}
+        <div class="rrow"><span>Saved online</span><b>${when(lastAutoSave)||'not yet'}</b></div>
+        <div class="rrow"><span>Backup file</span><b>${when(lastBackupAt)||'never'}</b></div>
+        <div class="rsay" style="margin-top:7px;">Saves itself every hour, as <b>${esc(editor||'this account')}</b>.${
+          saveAge>=1?` <span class="stale">Last save was ${saveAge} day(s) ago.</span>`:''}${
+          !lastBackupAt&&d.total?` <span class="stale">No backup has ever been downloaded.</span>`
+          :backupAge>=30?` <span class="stale">The backup is ${backupAge} days old.</span>`:''}</div>
+        <button class="btn" id="railSave" style="width:100%; margin-top:8px;">Save draft now</button>`
+       :`<div class="rsay">Kept in this browser only. Nothing is saved online until you sign in.</div>
+         ${lastBackupAt?`<div class="rrow" style="margin-top:6px;"><span>Backup file</span><b>${when(lastBackupAt)}</b></div>`:''}`}
     </div>
 
-    <div class="rsec">
-      <div class="rk">More</div>
-      <div class="rbtns">
-        <button class="btn sm" id="railImport">Import change-set…</button>
-        <button class="btn sm" id="railBackup">Download backup</button>
-        <button class="btn sm" id="railRestore">Restore from backup…</button>
-        ${repo?`<button class="btn sm" id="railSignout">Sign out</button>`:''}
+    <details class="dr" id="drBackups"${railDrawers.backups?' open':''}>
+      <summary>Backups &amp; earlier versions</summary>
+      <div class="drbody">
+        <p class="drhint">A backup is a single file on your computer holding the draft, the
+          classifications and the release history.</p>
+        <button class="btn" id="railBackup" style="width:100%;">Download a backup</button>
+        <button class="btn" id="railRestore" style="width:100%;">Restore from a backup…</button>
+        <button class="btn" id="railVersions" style="width:100%;">Past versions${releases.length?` (${releases.length})`:''}</button>
       </div>
-      <div class="rstate" style="margin-top:9px;" id="backupNote"></div>
-    </div>`;
+    </details>
 
-  // Wire the rail each render. It is rebuilt wholesale, so listeners cannot be
-  // attached once at boot.
+    <details class="dr" id="drReplace"${railDrawers.replace?' open':''}>
+      <summary>Replace what is in this browser</summary>
+      <div class="drbody">
+        <p class="drhint">These discard what is here and load from elsewhere. Save the draft first if it
+          is ahead.</p>
+        ${connected?`<button class="btn" id="railLoad" style="width:100%;">Load the online copy…</button>`:''}
+        <button class="btn" id="railImport" style="width:100%;">Import a change-set…</button>
+        ${repo?`<button class="btn quiet" id="railSignout" style="width:100%;">Sign out${editor?` — ${esc(editor)}`:''}</button>`:''}
+      </div>
+    </details>`;
+
+  // Wired on every render, since the rail is rebuilt each time.
   const on=(id,fn)=>{ const e=$(id); if(e) e.onclick=fn; };
   on('railConnect',openRepoModal);
   on('railLoadNewer',e=>loadFromRepo(e.target));
@@ -2393,16 +2460,9 @@ function renderRail(){
   on('railBackup',exportBackup);
   on('railRestore',()=>$('restoreFile').click());
   on('railSignout',()=>$('repoForget').click());
-  $('rail').querySelectorAll('[data-vocab]').forEach(b=>
-    b.onclick=()=>openVocab(b.dataset.vocab));
-
-  const note=$('backupNote');
-  if(note){
-    note.innerHTML = !lastBackupAt
-      ? (d.total?`<span style="color:var(--upd-text);font-weight:600;">Never backed up — ${d.total.toLocaleString()} unsaved change(s).</span>`
-               : 'A backup captures everything in one file.')
-      : `Last backup ${new Date(lastBackupAt).toLocaleDateString()}`;
-  }
+  $('rail').querySelectorAll('[data-vocab]').forEach(b=>b.onclick=()=>openVocab(b.dataset.vocab));
+  const keep=(id,key)=>{ const e=$(id); if(e) e.ontoggle=()=>{ railDrawers[key]=e.open; }; };
+  keep('drBackups','backups'); keep('drReplace','replace');
 }
 
 function openVocab(tab){ vTab=tab||vTab; renderVocab(); $('vocabBg').classList.add('open'); }
