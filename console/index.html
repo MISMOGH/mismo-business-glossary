@@ -251,6 +251,8 @@
       <div class="sub">Edit the glossary, review changes, publish a version</div></div>
     <div class="mast-right">
       <span class="count" id="dbStatus">Loading…</span>
+      <a class="btn sm" id="btnPublic" href="../" target="_blank" rel="noopener"
+         title="Open the public glossary in a new tab">View public glossary ↗</a>
     </div>
   </div>
 </div>
@@ -288,10 +290,12 @@
       </div>
 
       <div class="card hidden" id="exportCard">
-        <div class="card-head"><h2>Staged changes</h2></div>
-        <p class="hint">Staged edits are not in the draft yet. Apply them to the draft, or export them as a change-set CSV.</p>
+        <div class="card-head"><h2>Pending changes</h2></div>
+        <p class="hint">Classification changes apply immediately and are listed for the record. Staged term edits are not in the draft yet — apply them, or export them as a change-set CSV.</p>
         <div class="stats" id="changeStats" style="margin-bottom:14px;"></div>
         <div id="validation"></div>
+        <div id="vocabChanges"></div>
+        <div id="stagedFilter"></div>
         <div id="stagedList"></div>
         <div style="display:flex; gap:9px; flex-wrap:wrap; margin-top:14px;">
           <button class="btn ok" id="btnApply">Apply staged to draft</button>
@@ -518,6 +522,8 @@ let master=[];          // the working draft. Edits land here and accumulate.
 let baseline=[];        // snapshot of the last published version. master is diffed against it.
 let version=1;          // next version number to publish
 let releases=[];        // [{version, publishedAt, counts, changeSet, note}]
+let vocabLog=[];        // classification changes since the last published version
+let stagedFilter='all'; // staged list view: all | add | update | remove
 let touched={};         // ID -> ISO timestamp of when it last changed in the draft
 let lastBackupAt=null;  // so the console can warn when a backup is stale
 let vocab={TermType:[],FocusArea:[],Source:[]};
@@ -532,7 +538,7 @@ let selected=new Set();   // __key values; deliberately survives paging and filt
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const persist=async()=>{ await idbSet('master',master); await idbSet('baseline',baseline);
-  await idbSet('version',version); await idbSet('releases',releases); await idbSet('touched',touched); await idbSet('lastBackupAt',lastBackupAt);
+  await idbSet('version',version); await idbSet('releases',releases); await idbSet('vocabLog',vocabLog); await idbSet('touched',touched); await idbSet('lastBackupAt',lastBackupAt);
   await idbSet('vocab',vocab);
   await idbSet('staged',staged); await idbSet('resolved',resolved); await idbSet('fixCount',fixCount); await idbSet('newCounter',newCounter); };
 
@@ -769,10 +775,28 @@ function renderVocab(){
   $('vHint').innerHTML=`Renaming rewrites the value on every term using it. Deleting leaves those terms without that classification, which then surfaces as an issue.`
     +(unused?` <strong>${unused}</strong> value(s) here are unused.`:'');
 }
+/* Classification edits are recorded rather than merely applied. Renaming a
+   source rewrites it on every term that carries it, which is one of the largest
+   changes a facilitator can make and previously left no trace anywhere in the
+   review — the term diffs showed the effect but nothing named the cause. Cleared
+   on publish, alongside the draft. */
+function logVocab(op,field,from,to,impact){
+  vocabLog.unshift({op,field,from,to,...impact,at:new Date().toISOString(),by:editor||null});
+}
+function vocabImpact(field,val){
+  const f=vfield(field); if(!f) return {terms:0,staged:0};
+  return {
+    terms: master.filter(r=>cellValues(r,f).includes(val)).length,
+    staged: Object.values(staged).filter(x=>cellValues(x.data,f).includes(val)).length
+  };
+}
+
 async function vocabAdd(field,val){
   val=String(val||'').trim(); if(!val) return;
   if(vocab[field].includes(val)){alert(`"${val}" is already in this list.`);return;}
-  vocab[field]=[...vocab[field],val].sort(); await persist(); renderAll();
+  vocab[field]=[...vocab[field],val].sort();
+  logVocab('add',field,null,val,{terms:0,staged:0});
+  await persist(); renderAll();
 }
 /* Count what a rename would touch, without changing anything. Used to preview
    impact before the user commits, and to report it afterwards. */
@@ -798,14 +822,18 @@ async function vocabRename(field,oldV,newV){
   // Staged edits carry their own copy of the row, so they must be rewritten too -
   // otherwise they keep the old spelling and immediately fail vocabulary validation.
   Object.values(staged).forEach(s=>{ if(rewrite(s.data)) sn++; });
+  const merged=vocab[field].includes(newV);
   vocab[field]=[...new Set(vocab[field].map(v=>v===oldV?newV:v))].sort();
+  logVocab(merged?'merge':'rename',field,oldV,newV,{terms:n,staged:sn});
   await persist(); renderAll();
   return {terms:n, staged:sn};
 }
 async function vocabDelete(field,val){
   const n=vocabUsage(field).get(val)||0;
   if(!confirm(n?`"${val}" is used by ${n.toLocaleString()} term(s).\n\nDeleting removes it from the vocabulary; those terms are then flagged as outside it.\n\nContinue?`:`Delete "${val}"?`)) return;
-  vocab[field]=vocab[field].filter(v=>v!==val); await persist(); renderAll();
+  vocab[field]=vocab[field].filter(v=>v!==val);
+  logVocab('delete',field,val,null,{terms:n,staged:0});
+  await persist(); renderAll();
 }
 
 /* ============================================================================ IMPORT (change-sets only) */
@@ -1070,9 +1098,68 @@ function linkLog(value){
 const fieldLabel=f=>(LINK_FIELDS.find(x=>x.key===f)||{}).label
   ||({TermType:'Term type',FocusArea:'Focus area'}[f])||f;
 
+/* Classification changes sit above the term list because they explain it: a
+   rename shows up as dozens of edited terms with no stated cause, and the impact
+   count is the part a reviewer actually needs. */
+function renderVocabChanges(){
+  const el=$('vocabChanges');
+  if(!vocabLog.length){ el.innerHTML=''; return; }
+  const verb={add:'Added',rename:'Renamed',merge:'Merged',delete:'Deleted'};
+  const cls={add:'add',rename:'upd',merge:'upd',delete:'rem'};
+  el.innerHTML=`<div class="staged-wrap" style="margin-top:14px;">
+    <div class="sd-row" style="background:var(--brand-soft);">
+      <strong style="font-size:13px;">Classification changes</strong>
+      <span class="sd-origin"> · ${vocabLog.length} since the last published version</span>
+    </div>
+    ${vocabLog.map((v,i)=>`<div class="sd-row">
+      <div class="sd-head">
+        <span class="chip ${cls[v.op]}">${verb[v.op]}</span>
+        <strong>${esc(vfield(v.field)?.label||v.field)}</strong>
+        <span class="sd-origin">${v.by?esc(v.by)+' · ':''}${new Date(v.at).toLocaleString()}</span>
+      </div>
+      <div class="sd-line">
+        <span class="sd-f">Value</span>
+        ${v.from?`<span class="${v.op==='delete'?'sd-from':'sd-from'}">${esc(v.from)}</span>`:''}
+        ${v.from&&v.to?'<span class="sd-arrow">→</span>':''}
+        ${v.to?`<span class="sd-to">${esc(v.to)}</span>`:''}
+      </div>
+      <div class="sd-line">
+        <span class="sd-f">Impact</span>
+        <span>${v.terms
+          ? `<strong>${v.terms.toLocaleString()}</strong> term(s) rewritten`
+          : v.op==='add' ? 'None yet — the value is available to use'
+          : v.op==='delete' ? '<strong>none</strong> — no term used it'
+          : 'No term carried this value'}${
+          v.staged?` · ${v.staged.toLocaleString()} staged edit(s) rewritten`:''}${
+          v.op==='delete'&&v.terms?` — those terms are now outside the vocabulary`:''}</span>
+      </div>
+    </div>`).join('')}
+  </div>`;
+}
+
+function renderStagedFilter(){
+  const list=Object.values(staged);
+  const el=$('stagedFilter');
+  if(list.length<2){ el.innerHTML=''; return; }
+  const n=a=>list.filter(x=>x.action===a).length;
+  const opts=[['all','All',list.length],['add','Additions',n('add')],
+              ['update','Updates',n('update')],['remove','Removals',n('remove')]];
+  el.innerHTML=`<div class="mode" style="margin-top:14px;">${opts.map(([k,l,c])=>
+    `<button data-sfilter="${k}" class="${stagedFilter===k?'on':''}"${c?'':' disabled'}>${l} ${c}</button>`).join('')}</div>`;
+  el.querySelectorAll('[data-sfilter]').forEach(b=>b.onclick=()=>{
+    if(b.disabled) return;
+    stagedFilter=b.dataset.sfilter; renderStagedFilter(); renderStagedList();
+  });
+}
+
 function renderStagedList(){
-  const entries=Object.entries(staged);
-  if(!entries.length){ $('stagedList').innerHTML=''; return; }
+  const all=Object.entries(staged);
+  const entries=stagedFilter==='all'?all:all.filter(([,e])=>e.action===stagedFilter);
+  if(!all.length){ $('stagedList').innerHTML=''; return; }
+  if(!entries.length){
+    $('stagedList').innerHTML=`<div class="empty" style="padding:26px;">No ${stagedFilter==='add'?'additions':stagedFilter==='update'?'updates':'removals'} staged.</div>`;
+    return;
+  }
   const trunc=(s,n=90)=>{ s=String(s??'').replace(/\s+/g,' ').trim();
     return s.length>n?esc(s.slice(0,n))+'…':(esc(s)||'<em style="color:var(--ink-soft)">empty</em>'); };
 
@@ -1136,7 +1223,7 @@ function renderExport(){
         <div style="color:var(--ink-soft); margin-top:3px;">${i.hits.slice(0,3).map(h=>esc(h.data.Term||'(untitled)')).join(', ')}${i.hits.length>3?` +${i.hits.length-3} more`:''}</div>
         </div></div>`).join('')
       :`<div class="val-row"><span class="chip add">passed</span><div><strong>All checks passed.</strong> ${list.length} row(s) ready.</div></div>`;
-  renderStagedList();
+  renderVocabChanges(); renderStagedFilter(); renderStagedList();
   $('btnExportChanges').disabled=!list.length||errs.length>0;
   $('btnApply').disabled=!list.length||errs.length>0;
   $('btnExportChanges').textContent=errs.length?`Resolve ${errs.length} error${errs.length>1?'s':''} to export`:`Export change-set CSV (${list.length})`;
@@ -1250,7 +1337,7 @@ async function publishVersion(){
     counts:{added:d.added.length,edited:d.edited.length,removed:d.removed.length},
     changeSet:rows, note:String(note||'').trim(), commit:sha});
   baseline=master.map(r=>({...r}));   // the draft becomes the new published state
-  touched={}; version++;
+  touched={}; vocabLog=[]; version++;
   lastAutoSave=new Date().toISOString();
   lastSavedVocab=JSON.stringify(vocab);
   await idbSet('lastAutoSave',lastAutoSave);
@@ -1440,7 +1527,7 @@ function buildDraftFile(){
     diff:{added:d.added.map(x=>x.row),
           edited:d.edited.map(x=>x.row),
           removed:d.removed.map(x=>x.row.ID)},
-    vocab, staged, resolved, touched, releases, version, fixCount, newCounter
+    vocab, vocabLog, staged, resolved, touched, releases, version, fixCount, newCounter
   });
 }
 function applyDraftFile(payload,baseRows){
@@ -1462,6 +1549,7 @@ function applyDraftFile(payload,baseRows){
      && payload.vocab.TermType.length) vocab=payload.vocab;
   staged=payload.staged||{}; resolved=payload.resolved||{};
   touched=payload.touched||{}; releases=payload.releases||[]; version=payload.version||1;
+  vocabLog=payload.vocabLog||[];
   fixCount=payload.fixCount||0; newCounter=payload.newCounter||1;
 }
 
@@ -1552,7 +1640,7 @@ async function repoPublish(note){
     savedAt:new Date().toISOString(),note:'No changes since the last published version.',
     summary:{added:0,edited:0,removed:0,staged:0,nextVersion:version+1},
     diff:{added:[],edited:[],removed:[]},
-    vocab,staged:{},resolved,touched:{},releases,version:version+1,fixCount,newCounter});
+    vocab,vocabLog:[],staged:{},resolved,touched:{},releases,version:version+1,fixCount,newCounter});
   return ghCommit([{path:DATA_PATH,content:out},{path:DRAFT_PATH,content:empty}],
     `Publish version ${version}${note?` — ${note}`:''}\n\n`
     +`${master.length.toLocaleString()} terms.`
@@ -1782,11 +1870,13 @@ function renderRail(){
          <div class="rbtns"><button class="btn sm" id="railIssues">Open review</button></div>`}
     </div>
 
-    ${stagedN?`
+    ${(stagedN||vocabLog.length)?`
     <div class="rsec">
-      <div class="rk">Staged <span class="sp">${stagedN.toLocaleString()}</span></div>
-      <div class="rstate">Not in the draft yet.</div>
-      <div class="rbtns"><button class="btn sm" id="railStaged">Review staged</button></div>
+      <div class="rk">Pending</div>
+      ${stagedN?`<div class="rline"><span>Staged edits</span><span class="v">${stagedN.toLocaleString()}</span></div>`:''}
+      ${vocabLog.length?`<div class="rline"><span>Classification changes</span><span class="v">${vocabLog.length}</span></div>`:''}
+      ${stagedN?`<div class="rstate" style="margin-top:5px;">Staged edits are not in the draft yet.</div>`:''}
+      <div class="rbtns"><button class="btn sm" id="railStaged">Review pending</button></div>
     </div>`:''}
 
     <div class="rsec">
@@ -1882,7 +1972,7 @@ function renderAll(){
   const has=master.length>0;
   $('shell').classList.toggle('hidden',!has);
   $('boot').classList.toggle('hidden',has);
-  $('exportCard').classList.toggle('hidden', !has || !Object.keys(staged).length);
+  $('exportCard').classList.toggle('hidden', !has || (!Object.keys(staged).length && !vocabLog.length));
   if(has){
     // A selected row can disappear - published, reverted, or removed - so prune
     // stale keys rather than letting a bulk action target something that is gone.
@@ -2093,6 +2183,7 @@ async function bootstrap(force){
         baseline=(await idbGet('baseline'))||saved.map(r=>({...r}));
         version=(await idbGet('version'))||1;
         releases=(await idbGet('releases'))||[];
+        vocabLog=(await idbGet('vocabLog'))||[];
         touched=(await idbGet('touched'))||{};
         lastBackupAt=(await idbGet('lastBackupAt'))||null;
         vocab=(await idbGet('vocab'))||vocab;
