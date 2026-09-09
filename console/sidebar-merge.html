@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sidebar — C2 with dense header</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Libre+Franklin:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#101B33; --ink-soft:#4B5670; --ink-faint:#7A8299;
+    --paper:#F1F3F9; --card:#FFFFFF; --line:#E1E4EC; --line-soft:#EDEFF5;
+    --brand:#125DAB; --brand-soft:#E7EFF7; --brand-text:#0E4680;
+    --add:#157A44; --add-soft:#E7F7EE; --add-text:#157A44;
+    --upd:#D97706; --upd-soft:#FEF3E2; --upd-text:#A85F06;
+    --rem:#B4232C; --rem-soft:#FDECEC; --rem-text:#B4232C;
+    --radius:12px; --shadow:0 1px 2px rgba(16,27,51,.04), 0 4px 14px rgba(16,27,51,.05);
+  }
+  *{box-sizing:border-box;}
+  body{margin:0; background:var(--paper); color:var(--ink);
+       font-family:'Libre Franklin',system-ui,sans-serif; font-size:14px;}
+  .doc{background:#101B33; color:#fff; padding:24px;}
+  .doc-in{max-width:1400px; margin:0 auto;}
+  .doc h1{margin:0 0 6px; font-size:20px;}
+  .doc p{margin:0; font-size:13px; color:#B9C2D6; max-width:920px; line-height:1.6;}
+  .wrap{max-width:1400px; margin:0 auto; padding:32px 24px 80px;}
+  .cols{display:grid; grid-template-columns:repeat(3,1fr); gap:26px; align-items:start;}
+  @media (max-width:1100px){ .cols{grid-template-columns:1fr;} }
+  .opt-tag{display:inline-block; font-size:10px; font-weight:700; letter-spacing:.06em;
+        text-transform:uppercase; background:var(--brand); color:#fff; padding:3px 8px; border-radius:5px;}
+  .opt h2{margin:9px 0 4px; font-size:16px;}
+  .opt > p{margin:0; font-size:12.5px; color:var(--ink-soft); line-height:1.6;}
+  .opt .note{font-size:12px; color:var(--ink-faint); line-height:1.6; margin:12px 0 0;}
+  .opt .note b{color:var(--ink-soft);}
+  .statelabel{font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em;
+              color:var(--ink-faint); margin:22px 0 8px;}
+
+  .rail{background:var(--card); border:1px solid var(--line); border-radius:var(--radius);
+        box-shadow:var(--shadow); overflow:hidden; margin-top:14px;}
+  .btn{display:block; width:100%; text-align:center; font-family:inherit; font-size:12.5px;
+       font-weight:600; padding:8px 12px; border-radius:8px; border:1px solid var(--line);
+       background:var(--card); color:var(--ink); cursor:pointer; margin-top:8px;}
+  .btn:hover{border-color:var(--brand); color:var(--brand-text);}
+  .btn.warn{background:var(--upd); border-color:var(--upd); color:#fff;}
+  .btn.sm{padding:6px 10px; font-size:12px;}
+  .btn.quiet{border-color:transparent; color:var(--ink-soft); font-weight:500;}
+  .btn.quiet:hover{border-color:var(--line); color:var(--ink);}
+  .dot{width:7px; height:7px; border-radius:50%; display:inline-block; flex:0 0 auto;}
+  .dot.g{background:var(--add);} .dot.a{background:var(--upd);}
+  .when{font-variant-numeric:tabular-nums;}
+
+  /* ---- the header being borrowed ---- */
+  .hd{display:flex; align-items:flex-start; gap:12px; padding:14px 15px 13px;
+      border-bottom:1px solid var(--line);}
+  .hd .n{font-size:23px; font-weight:700; line-height:1; font-variant-numeric:tabular-nums;}
+  .hd .l{font-size:11.5px; color:var(--ink-faint); margin-top:4px; line-height:1.35;}
+  .hd .r{margin-left:auto; text-align:right;}
+  .hd .r .n{color:var(--upd-text);}
+  .hd .r.clear .n{color:var(--add-text);}
+  .hd .split{width:1px; align-self:stretch; background:var(--line); margin:0 2px;}
+  a.hd-link{text-decoration:none; color:inherit; display:block;}
+  a.hd-link:hover .n{text-decoration:underline;}
+
+  .cls{padding:11px 15px 13px; border-bottom:1px solid var(--line);}
+  .cls-row{display:flex; justify-content:space-between; align-items:baseline;
+           font-size:13px; padding:4px 0;}
+  .cls-row a{color:var(--brand); text-decoration:none;}
+  .cls-row a:hover{text-decoration:underline;}
+  .cls-row b{font-weight:700; font-variant-numeric:tabular-nums;}
+
+  /* ---- C2 accented sections ---- */
+  .sec{padding:13px 14px 14px; border-bottom:1px solid var(--line); border-left:3px solid transparent;}
+  .sec.ok{border-left-color:var(--add);}
+  .sec.attn{border-left-color:var(--upd); background:#FFFCF6;}
+  .sec-h{display:flex; align-items:baseline; gap:8px; margin-bottom:8px;}
+  .sec-h .t{font-size:12px; font-weight:700;}
+  .sec-h .c{margin-left:auto; font-size:17px; font-weight:700; font-variant-numeric:tabular-nums;}
+  .sec-h .c.attn{color:var(--upd-text);}
+  .sec-row{display:flex; justify-content:space-between; font-size:12.5px; color:var(--ink-soft); padding:2.5px 0;}
+  .sec-row b{color:var(--ink); font-variant-numeric:tabular-nums;}
+  .say{font-size:12.5px; color:var(--ink-soft); line-height:1.5;}
+  .say b{color:var(--ink);}
+
+  details.dr{border-top:1px solid var(--line);}
+  details.dr summary{list-style:none; cursor:pointer; padding:10px 14px; font-size:12.5px;
+    font-weight:600; color:var(--ink-soft); display:flex; align-items:center; gap:8px;}
+  details.dr summary::-webkit-details-marker{display:none;}
+  details.dr summary:after{content:'▾'; margin-left:auto; font-size:10px; color:var(--ink-faint);}
+  details.dr[open] summary:after{content:'▴';}
+  details.dr summary:hover{background:var(--paper); color:var(--ink);}
+  details.dr .body{padding:2px 14px 13px;}
+  .hint{font-size:11.5px; color:var(--ink-faint); line-height:1.5; margin:0 0 9px;}
+</style>
+</head>
+<body>
+
+<div class="doc"><div class="doc-in">
+  <h1>C2 with the dense header on top</h1>
+  <p>The two headline numbers lead, the classification counts and their button sit directly beneath, and
+     C2's coloured sections carry on below. The three versions differ only in how the header and the
+     "needs a decision" section divide the work between them — the duplication is the one thing the merge
+     has to resolve.</p>
+</div></div>
+
+<div class="wrap"><div class="cols">
+
+<!-- ============================== 1 ============================== -->
+<div class="opt">
+  <span class="opt-tag">Merge 1</span>
+  <h2>Header reports, section acts</h2>
+  <p>The header states the count; the amber section below still holds the detail and the button. Closest
+     to what you sketched, and the count appears twice on purpose — once as a fact, once as a task.</p>
+
+  <div class="rail">
+    <div class="hd">
+      <div><div class="n">8,397</div><div class="l">terms in the glossary</div></div>
+      <div class="split"></div>
+      <div class="r"><div class="n">1</div><div class="l">needs a decision</div></div>
+    </div>
+    <div class="cls">
+      <div class="cls-row"><a href="#">Term types</a><b>9</b></div>
+      <div class="cls-row"><a href="#">Focus areas</a><b>17</b></div>
+      <div class="cls-row"><a href="#">Sources</a><b>11</b></div>
+      <button class="btn">Manage classifications</button>
+    </div>
+
+    <div class="sec attn">
+      <div class="sec-h"><span class="t">Needs a decision</span><span class="c attn">1</span></div>
+      <div class="say">Flagged during review. None can be corrected automatically.</div>
+      <button class="btn sm warn">Review</button>
+    </div>
+    <div class="sec ok">
+      <div class="sec-h"><span class="t">Unpublished</span><span class="c">0</span></div>
+      <div class="say">The draft matches published version 4.</div>
+      <button class="btn sm">See what changed</button>
+    </div>
+    <div class="sec ok">
+      <div class="sec-h"><span class="t">Your work is safe</span></div>
+      <div class="sec-row"><span>Saved online</span><b class="when">8 Sep, 10:16 PM</b></div>
+      <div class="sec-row"><span>Backup file</span><b class="when">8 Sep, 4:02 PM</b></div>
+      <div class="say" style="margin-top:7px;">Saves itself every hour, as <b>Perry Williams</b>.</div>
+      <button class="btn sm">Save draft now</button>
+    </div>
+
+    <details class="dr"><summary>Backups &amp; earlier versions</summary>
+      <div class="body"><p class="hint">A backup is one file on your computer holding the draft, the
+        classifications and the release history.</p>
+        <button class="btn sm">Download a backup</button>
+        <button class="btn sm">Restore from a backup…</button>
+        <button class="btn sm">Past versions (4)</button></div></details>
+    <details class="dr"><summary>Replace what is in this browser</summary>
+      <div class="body"><p class="hint">These discard what is here. Save the draft first if it is ahead.</p>
+        <button class="btn sm">Load the online copy…</button>
+        <button class="btn sm">Import a change-set…</button>
+        <button class="btn sm quiet">Sign out</button></div></details>
+  </div>
+
+  <p class="note"><b>Trade-off:</b> the safest merge, but "1" is on screen twice within 200px. Fine when
+     it reads as headline-then-detail; slightly redundant when there is nothing to do.</p>
+</div>
+
+<!-- ============================== 2 ============================== -->
+<div class="opt">
+  <span class="opt-tag">Merge 2</span>
+  <h2>Header is the button</h2>
+  <p>The right side of the header becomes the control: click the number to open the review. The separate
+     amber section goes, since it was only repeating the count and holding one button.</p>
+
+  <div class="rail">
+    <div class="hd">
+      <div><div class="n">8,397</div><div class="l">terms in the glossary</div></div>
+      <div class="split"></div>
+      <a class="hd-link r" href="#" title="Open the review"><div class="n">1</div>
+        <div class="l">needs a decision →</div></a>
+    </div>
+    <div class="cls">
+      <div class="cls-row"><a href="#">Term types</a><b>9</b></div>
+      <div class="cls-row"><a href="#">Focus areas</a><b>17</b></div>
+      <div class="cls-row"><a href="#">Sources</a><b>11</b></div>
+      <button class="btn">Manage classifications</button>
+    </div>
+
+    <div class="sec ok">
+      <div class="sec-h"><span class="t">Unpublished</span><span class="c">0</span></div>
+      <div class="say">The draft matches published version 4.</div>
+      <button class="btn sm">See what changed</button>
+    </div>
+    <div class="sec ok">
+      <div class="sec-h"><span class="t">Your work is safe</span></div>
+      <div class="sec-row"><span>Saved online</span><b class="when">8 Sep, 10:16 PM</b></div>
+      <div class="sec-row"><span>Backup file</span><b class="when">8 Sep, 4:02 PM</b></div>
+      <div class="say" style="margin-top:7px;">Saves itself every hour, as <b>Perry Williams</b>.</div>
+      <button class="btn sm">Save draft now</button>
+    </div>
+
+    <details class="dr"><summary>Backups &amp; earlier versions</summary>
+      <div class="body">
+        <button class="btn sm">Download a backup</button>
+        <button class="btn sm">Restore from a backup…</button>
+        <button class="btn sm">Past versions (4)</button></div></details>
+    <details class="dr"><summary>Replace what is in this browser</summary>
+      <div class="body"><p class="hint">These discard what is here.</p>
+        <button class="btn sm">Load the online copy…</button>
+        <button class="btn sm">Import a change-set…</button>
+        <button class="btn sm quiet">Sign out</button></div></details>
+  </div>
+
+  <p class="note"><b>Trade-off:</b> shortest of the three and nothing repeats. But a number that is also a
+     button is easy to miss, and "none can be corrected automatically" — worth knowing before opening —
+     has nowhere left to go.</p>
+</div>
+
+<!-- ============================== 3 ============================== -->
+<div class="opt">
+  <span class="opt-tag">Merge 3</span>
+  <h2>Header carries the action</h2>
+  <p>The header keeps both numbers and gains an amber bar beneath it when something is outstanding. The
+     detail line stays, the separate section goes. Below is the settled state, for contrast.</p>
+
+  <div class="rail">
+    <div class="hd">
+      <div><div class="n">8,397</div><div class="l">terms in the glossary</div></div>
+      <div class="split"></div>
+      <div class="r"><div class="n">1</div><div class="l">needs a decision</div></div>
+    </div>
+    <div style="padding:10px 14px 12px; background:#FFFCF6; border-bottom:1px solid var(--line);
+                border-left:3px solid var(--upd);">
+      <div class="say" style="margin-bottom:2px;">None can be corrected automatically.</div>
+      <button class="btn sm warn">Review the 1 issue</button>
+    </div>
+    <div class="cls">
+      <div class="cls-row"><a href="#">Term types</a><b>9</b></div>
+      <div class="cls-row"><a href="#">Focus areas</a><b>17</b></div>
+      <div class="cls-row"><a href="#">Sources</a><b>11</b></div>
+      <button class="btn">Manage classifications</button>
+    </div>
+
+    <div class="sec ok">
+      <div class="sec-h"><span class="t">Unpublished</span><span class="c">0</span></div>
+      <div class="say">The draft matches published version 4.</div>
+      <button class="btn sm">See what changed</button>
+    </div>
+    <div class="sec ok">
+      <div class="sec-h"><span class="t">Your work is safe</span></div>
+      <div class="sec-row"><span>Saved online</span><b class="when">8 Sep, 10:16 PM</b></div>
+      <div class="sec-row"><span>Backup file</span><b class="when">8 Sep, 4:02 PM</b></div>
+      <div class="say" style="margin-top:7px;">Saves itself every hour, as <b>Perry Williams</b>.</div>
+      <button class="btn sm">Save draft now</button>
+    </div>
+
+    <details class="dr"><summary>Backups &amp; earlier versions</summary>
+      <div class="body">
+        <button class="btn sm">Download a backup</button>
+        <button class="btn sm">Restore from a backup…</button>
+        <button class="btn sm">Past versions (4)</button></div></details>
+    <details class="dr"><summary>Replace what is in this browser</summary>
+      <div class="body"><p class="hint">These discard what is here.</p>
+        <button class="btn sm">Load the online copy…</button>
+        <button class="btn sm">Import a change-set…</button>
+        <button class="btn sm quiet">Sign out</button></div></details>
+  </div>
+
+  <div class="statelabel">Merge 3 with nothing outstanding</div>
+  <div class="rail" style="margin-top:0;">
+    <div class="hd">
+      <div><div class="n">8,397</div><div class="l">terms in the glossary</div></div>
+      <div class="split"></div>
+      <div class="r clear"><div class="n">0</div><div class="l">need a decision</div></div>
+    </div>
+    <div class="cls">
+      <div class="cls-row"><a href="#">Term types</a><b>9</b></div>
+      <div class="cls-row"><a href="#">Focus areas</a><b>17</b></div>
+      <div class="cls-row"><a href="#">Sources</a><b>11</b></div>
+      <button class="btn">Manage classifications</button>
+    </div>
+    <div class="sec attn">
+      <div class="sec-h"><span class="t">Unpublished</span><span class="c attn">27</span></div>
+      <div class="sec-row"><span>Added</span><b>1</b></div>
+      <div class="sec-row"><span>Edited</span><b>26</b></div>
+      <button class="btn sm">See what changed</button>
+      <button class="btn sm warn">Publish version 5</button>
+    </div>
+    <div class="sec ok">
+      <div class="sec-h"><span class="t">Your work is safe</span></div>
+      <div class="sec-row"><span>Saved online</span><b class="when">8 Sep, 10:16 PM</b></div>
+      <div class="sec-row"><span>Backup file</span><b class="when">8 Sep, 4:02 PM</b></div>
+      <button class="btn sm">Save draft now</button>
+    </div>
+  </div>
+
+  <p class="note"><b>Trade-off:</b> the amber bar appears only when it is earned, so a settled panel is
+     calm and a busy one is obvious. Costs a little height when something is outstanding, which is
+     precisely when height is worth spending.</p>
+</div>
+
+</div>
+
+<div style="max-width:1400px; margin:40px auto 0; padding:0 24px;">
+  <h2 style="font-size:16px; margin:0 0 8px;">The thing to decide</h2>
+  <p style="font-size:13px; color:var(--ink-soft); line-height:1.7; max-width:920px; margin:0;">
+    Putting the issue count in the header means the old "Needs a decision" section has little left to do.
+    <b>Merge 1</b> keeps both and accepts the repetition. <b>Merge 2</b> drops the section and makes the
+    number itself the control, which is tidiest but loses the one-line explanation. <b>Merge 3</b> keeps
+    the explanation and the button but attaches them to the header, and shows nothing at all when there is
+    nothing outstanding — so the panel is quiet on a normal day and loud on the day it matters.</p>
+</div>
+</div>
+
+</body>
+</html>
