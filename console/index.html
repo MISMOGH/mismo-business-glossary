@@ -513,7 +513,9 @@
 
 <div class="modal-bg" id="verBg"><div class="modal wide">
   <h2>Versions</h2>
-  <p class="hint">Published versions. Each change-set is kept so it can be downloaded again.</p>
+  <p class="hint">Published versions. The change-set lists what altered in that release; the full
+     glossary is fetched from the repository as it stood at that version, so it is the file exactly
+     as published rather than today's rebuilt from memory.</p>
   <div class="vlist" id="releaseList"></div>
   <div class="vadd" style="margin-top:12px;">
     <input type="file" id="resyncFile" accept=".csv,.json" style="flex:1;">
@@ -2658,6 +2660,18 @@ function toBase64(str){
   return btoa(bin);
 }
 
+/* Read a file as it stood at a particular commit. Each published release records
+   the commit it created, so the glossary exactly as published can be fetched back
+   rather than kept as a local snapshot — which at 2.9MB a release would fill the
+   browser's storage within a year. */
+async function ghReadFileAt(path, ref){
+  const r=await fetch(ghURL(`/contents/${path}?ref=${encodeURIComponent(ref)}`),
+    {cache:'no-store', headers:ghHeaders({Accept:'application/vnd.github.raw'})});
+  if(r.status===404) return null;
+  if(!r.ok) throw new Error(`Reading ${path} at ${String(ref).slice(0,8)}: ${r.status} ${r.statusText}`);
+  return r.text();
+}
+
 async function ghReadFile(path){
   /* cache:'no-store' matters here. Without it the browser serves its own copy
      from earlier in the session, so a file read straight after writing it comes
@@ -3190,6 +3204,33 @@ function renderRail(){
 
 function openVocab(tab){ vTab=tab||vTab; renderVocab(); $('vocabBg').classList.add('open'); }
 
+/* The published file is fetched at that release's commit and converted here, so
+   what downloads is the glossary as it actually shipped — not the current one
+   filtered by memory of what changed. Link IDs are resolved against that same
+   snapshot, since a term renamed since would otherwise be named wrongly. */
+async function downloadReleaseGlossary(version, btn){
+  const rel=releases.find(x=>x.version===version);
+  if(!rel?.commit){ alert('This version has no recorded commit, so its file cannot be fetched.'); return; }
+  if(!repo||!repoState?.ok){ alert('Sign in first — the published file is fetched from the repository.'); return; }
+  const label=btn?btn.textContent:''; if(btn){ btn.disabled=true; btn.textContent='Fetching…'; }
+  try{
+    const text=await ghReadFileAt(DATA_PATH, rel.commit);
+    if(!text) throw new Error('data/glossary.json was not found at that commit.');
+    const snap=JSON.parse(text).terms;
+    const nameById=new Map(snap.map(t=>[t.id,t.term]));
+    const names=a=>(a||[]).map(id=>nameById.get(id)||id).join('|');
+    const rows=snap.map(t=>({
+      ID:t.id, Term:t.term, Definition:t.definition, Source:t.source,
+      TermType:t.termType, FocusArea:t.focusArea,
+      [AKA_COL]:names(t.aka), [REL_COL]:names(t.related)
+    }));
+    download(`GlossaryItems_v${version}_${new Date(rel.publishedAt).toISOString().slice(0,10)}.csv`,
+             toCSV(rows, EXPORT_COLS));
+  }catch(err){
+    alert(`Could not fetch the glossary for version ${version}.\n\n${err.message}`);
+  }finally{ if(btn){ btn.disabled=false; btn.textContent=label; } }
+}
+
 function renderVersions(){
   $('releaseList').innerHTML = releases.length ? releases.map(r=>`
     <div class="vrow"><span class="vval">Version ${r.version}
@@ -3197,7 +3238,16 @@ function renderVersions(){
       ${r.note?`<div style="font-weight:400;font-size:12px;color:var(--ink-soft);margin-top:2px;">${esc(r.note)}</div>`:''}
       ${r.commit?`<div style="font-weight:400;font-size:11.5px;color:var(--ink-soft);margin-top:2px;">commit ${esc(r.commit.slice(0,8))}</div>`:''}</span>
       <span class="vuse">${r.counts.added}+ / ${r.counts.edited}~ / ${r.counts.removed}−</span>
-      <button class="btn sm" data-redl="${r.version}">Download CSV</button></div>`).join('')
+      <span style="display:flex; gap:6px; flex-wrap:wrap;">
+        <button class="btn sm" data-redl="${r.version}" title="Only the terms that changed in this release">Change-set</button>
+        <button class="btn sm" data-fulldl="${r.version}"
+          ${r.commit && repo && repoState?.ok ? '' : 'disabled'}
+          title="${r.commit
+            ? (repo && repoState?.ok ? 'The whole glossary exactly as this version published it'
+                                     : 'Sign in to fetch the published file for this version')
+            : 'This version was published before the commit was recorded, so the file cannot be fetched'}"
+          >Full glossary</button>
+      </span></div>`).join('')
     : `<div class="empty">No versions published yet.</div>`;
 }
 
@@ -3357,12 +3407,18 @@ $('vocabChanges').onclick=e=>{
   const c=netCache.find(x=>x.field===field&&x.op===op&&(x.from||'')===from&&(x.to||'')===to);
   if(c) revertVocabChange(c);
 };
-$('releaseList').onclick=e=>{const d=e.target.closest('[data-redl]');
-  if(d){const rel=releases.find(x=>x.version===+d.dataset.redl);
-    // Older releases were stored with the previous columns; write whichever the
-    // stored rows actually carry so a re-download is not silently blank.
-    if(rel) download(`GlossaryChangeSet_v${rel.version}.csv`,
-      toCSV(rel.changeSet, (rel.changeSet[0] && AKA_COL in rel.changeSet[0]) ? CHANGESET_COLS : COLS));}};
+$('releaseList').onclick=e=>{
+  const fd=e.target.closest('[data-fulldl]');
+  if(fd){ downloadReleaseGlossary(+fd.dataset.fulldl, fd); return; }
+
+  const d=e.target.closest('[data-redl]');
+  if(!d) return;
+  const rel=releases.find(x=>x.version===+d.dataset.redl);
+  // Older releases were stored with the previous columns; write whichever the
+  // stored rows actually carry so a re-download is not silently blank.
+  if(rel) download(`GlossaryChangeSet_v${rel.version}.csv`,
+    toCSV(rel.changeSet, (rel.changeSet[0] && AKA_COL in rel.changeSet[0]) ? CHANGESET_COLS : COLS));
+};
 $('btnResync').onclick=async()=>{
   const f=$('resyncFile').files[0];
   if(!f){ alert('Choose the official glossary export first.'); return; }
