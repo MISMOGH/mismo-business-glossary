@@ -958,38 +958,76 @@ function stageVocab(op,field,from,to){
 
 /* Applying executes the pending changes in the order they were staged, against
    the real vocabulary and every term that carries the value. */
+/* Performing a classification change for real. Shared by applying a staged
+   change and by reverting an applied one, so the two can never diverge. */
+function performVocabOp(op,field,from,to,by,at){
+  const f=vfield(field); if(!f) return 0;
+  if(op==='add'){
+    if(!vocab[field].includes(to)) vocab[field]=[...vocab[field],to].sort();
+    logVocab('add',field,null,to,{terms:0,staged:0},by,at);
+    return 0;
+  }
+  if(op==='delete'){
+    const n=master.filter(r=>cellValues(r,f).includes(from)).length;
+    vocab[field]=vocab[field].filter(v=>v!==from);
+    logVocab('delete',field,from,null,{terms:n,staged:0},by,at);
+    return n;
+  }
+  const rewrite=obj=>{
+    const vals=cellValues(obj,f);
+    if(!vals.includes(from)) return false;
+    obj[field]=[...new Set(vals.map(v=>v===from?to:v))].join(f.multi||'');
+    return true;
+  };
+  let n=0,sn=0;
+  master.forEach(r=>{ if(rewrite(r)) n++; });
+  Object.values(staged).forEach(x=>{ if(rewrite(x.data)) sn++; });
+  const merged=vocab[field].includes(to);
+  vocab[field]=[...new Set(vocab[field].map(v=>v===from?to:v))].sort();
+  logVocab(merged?'merge':'rename',field,from,to,{terms:n,staged:sn},by,at);
+  return n;
+}
+
 async function applyVocabPending(){
   if(!vocabPending.length) return {ops:0,terms:0};
   let touchedTerms=0;
-  for(const p of vocabPending){
-    const f=vfield(p.field); if(!f) continue;
-    if(p.op==='add'){
-      if(!vocab[p.field].includes(p.to)) vocab[p.field]=[...vocab[p.field],p.to].sort();
-      logVocab('add',p.field,null,p.to,{terms:0,staged:0},p.by,p.at);
-    }else if(p.op==='rename'){
-      const rewrite=obj=>{
-        const vals=cellValues(obj,f);
-        if(!vals.includes(p.from)) return false;
-        obj[p.field]=[...new Set(vals.map(v=>v===p.from?p.to:v))].join(f.multi||'');
-        return true;
-      };
-      let n=0,sn=0;
-      master.forEach(r=>{ if(rewrite(r)) n++; });
-      Object.values(staged).forEach(x=>{ if(rewrite(x.data)) sn++; });
-      const merged=vocab[p.field].includes(p.to);
-      vocab[p.field]=[...new Set(vocab[p.field].map(v=>v===p.from?p.to:v))].sort();
-      logVocab(merged?'merge':'rename',p.field,p.from,p.to,{terms:n,staged:sn},p.by,p.at);
-      touchedTerms+=n;
-    }else if(p.op==='delete'){
-      const n=master.filter(r=>cellValues(r,f).includes(p.from)).length;
-      vocab[p.field]=vocab[p.field].filter(v=>v!==p.from);
-      logVocab('delete',p.field,p.from,null,{terms:n,staged:0},p.by,p.at);
-    }
-  }
+  for(const p of vocabPending) touchedTerms+=performVocabOp(p.op,p.field,p.from,p.to,p.by,p.at);
   const ops=vocabPending.length;
   vocabPending=[];
   await persist(); renderAll();
   return {ops,terms:touchedTerms};
+}
+
+/* Reverting an applied change performs its inverse. Because the log is read as
+   a net effect, the original and the inverse cancel and both entries disappear.
+
+   A merge cannot be cleanly reversed. Renaming A onto an existing B leaves no
+   record of which terms were A and which were already B, so renaming B back to
+   A would drag the pre-existing B terms along with it. That is real data loss,
+   so it is spelled out and confirmed separately rather than hidden. */
+async function revertVocabChange(c){
+  const f=vfield(c.field); if(!f) return;
+  if(c.op==='rename'){
+    const affected=master.filter(r=>cellValues(r,f).includes(c.to)).length;
+    if(c.merged){
+      if(!confirm(`"${c.from}" was merged into "${c.to}".\n\n`
+        +`Reverting cannot separate them again: which terms were originally "${c.from}" `
+        +`is no longer recorded, so all ${affected.toLocaleString()} term(s) now carrying `
+        +`"${c.to}" would be renamed back — including any that were never "${c.from}".\n\n`
+        +`Revert anyway?`)) return;
+    }else if(!confirm(`Rename "${c.to}" back to "${c.from}"?\n\n`
+        +`${affected.toLocaleString()} term(s) will be rewritten.`)) return;
+    performVocabOp('rename',c.field,c.to,c.from);
+  }else if(c.op==='add'){
+    const n=master.filter(r=>cellValues(r,f).includes(c.to)).length;
+    if(!confirm(`Remove "${c.to}" from ${f.label.toLowerCase()}?`
+      +(n?`\n\n${n.toLocaleString()} term(s) carry it and would then be outside the vocabulary.`:''))) return;
+    performVocabOp('delete',c.field,c.to,null);
+  }else if(c.op==='delete'){
+    if(!confirm(`Put "${c.from}" back into ${f.label.toLowerCase()}?`)) return;
+    performVocabOp('add',c.field,null,c.from);
+  }
+  await persist(); renderAll();
 }
 
 function logVocab(op,field,from,to,impact,by,at){
@@ -1365,7 +1403,7 @@ function netVocabChanges(){
   for(const f of VOCAB_FIELDS){
     const ops=vocabLog.filter(v=>v.field===f.key).slice().reverse();  // oldest first
     const origin=new Map();   // final value -> where it started
-    const added=new Set(), deleted=[];
+    const added=new Set(), deleted=[], merged=new Set();
     for(const op of ops){
       if(op.op==='add'){ added.add(op.to); }
       else if(op.op==='delete'){
@@ -1373,6 +1411,9 @@ function netVocabChanges(){
         else deleted.push({value:origin.has(op.from)?origin.get(op.from):op.from, at:op.at, by:op.by});
         origin.delete(op.from);
       }else{                                                  // rename or merge
+        // A merge is remembered because it cannot be cleanly reversed: which
+        // terms were the source is no longer recorded once the two are one.
+        if(op.op==='merge') merged.add(op.to);
         if(added.has(op.from)){ added.delete(op.from); added.add(op.to); }
         else {
           const from=origin.has(op.from)?origin.get(op.from):op.from;
@@ -1381,9 +1422,14 @@ function netVocabChanges(){
       }
     }
     const last=v=>ops.filter(o=>o.to===v||o.from===v).slice(-1)[0]||{};
+    // The spread comes first on purpose: it carries the timestamp and author
+    // from the original entry, but must not overwrite the net values computed
+    // here. Putting it last silently reinstated the raw op and lost the merge
+    // flag, so a merge rendered as an ordinary rename and reverted without
+    // warning.
     for(const [now,was] of origin) if(now!==was)
-      out.push({op:'rename',field:f.key,from:was,to:now,...last(now)});
-    for(const v of added) out.push({op:'add',field:f.key,from:null,to:v,...last(v)});
+      out.push({...last(now), op:'rename', field:f.key, from:was, to:now, merged:merged.has(now)});
+    for(const v of added) out.push({...last(v), op:'add', field:f.key, from:null, to:v, merged:false});
     for(const d of deleted) out.push({op:'delete',field:f.key,from:d.value,to:null,at:d.at,by:d.by});
   }
   // Impact is recounted against the glossary as it now stands, since an
@@ -1394,10 +1440,12 @@ function netVocabChanges(){
   }).sort((a,b)=>new Date(b.at||0)-new Date(a.at||0));
 }
 
+let netCache=[];
 function renderVocabChanges(){
   const el=$('vocabChanges');
   if(!el) return;
   const net=netVocabChanges();
+  netCache=net;
   if(!net.length){ el.innerHTML=''; return; }
   const verb={add:'Added',rename:'Renamed',merge:'Merged',delete:'Deleted'};
   const cls={add:'add',rename:'update',merge:'update',delete:'remove'};
@@ -1414,7 +1462,8 @@ function renderVocabChanges(){
         ${v.to?`<code class="new">${esc(v.to)}</code>`:''}</span>
       <span class="cc-impact">${ccImpact(v.op,v,true)}</span>
       <span class="cc-meta">${v.by?esc(v.by)+' · ':''}${new Date(v.at).toLocaleDateString()}</span>
-      <span></span>
+      <button class="btn sm" data-ccrevert="${esc(v.field)}|${esc(v.op)}|${esc(v.from||'')}|${esc(v.to||'')}"
+        ${v.merged?'title="Merged — reverting cannot separate the values again"':''}>Revert${v.merged?' ⚠':''}</button>
     </div>`).join('')}
   </div>`;
 }
@@ -2447,6 +2496,12 @@ $('draftClose').onclick=()=>$('draftBg').classList.remove('open');
 $('draftBg').onclick=e=>{if(e.target===$('draftBg')) $('draftBg').classList.remove('open');};
 $('draftGroups').onclick=e=>{const r=e.target.closest('[data-revert]');
   if(r) revertChange(r.dataset.revert,r.dataset.kind);};
+$('vocabChanges').onclick=e=>{
+  const b=e.target.closest('[data-ccrevert]'); if(!b) return;
+  const [field,op,from,to]=b.dataset.ccrevert.split('|');
+  const c=netCache.find(x=>x.field===field&&x.op===op&&(x.from||'')===from&&(x.to||'')===to);
+  if(c) revertVocabChange(c);
+};
 $('releaseList').onclick=e=>{const d=e.target.closest('[data-redl]');
   if(d){const rel=releases.find(x=>x.version===+d.dataset.redl);
     if(rel) download(`GlossaryChangeSet_v${rel.version}.csv`, toCSV(rel.changeSet,COLS));}};
