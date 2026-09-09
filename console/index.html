@@ -318,6 +318,16 @@
   .tour-dot.done{background:#B6CBE2;}
     .tour-skip{position:fixed; top:16px; left:18px; z-index:2012;}
   .tour-skip.right{left:auto; right:18px;}
+  .tour-audio{display:flex; align-items:center; gap:6px; margin:0 0 10px;}
+  .tour-audio button{font-family:inherit; font-size:11.5px; font-weight:600; cursor:pointer;
+    border:1px solid var(--line); background:var(--card); color:var(--ink-soft);
+    border-radius:999px; padding:3px 10px; display:inline-flex; align-items:center; gap:5px;}
+  .tour-audio button:hover{border-color:var(--brand); color:var(--brand-text);}
+  .tour-audio button.on{background:var(--brand-soft); border-color:var(--brand);
+    color:var(--brand-text);}
+  .tour-audio select{font-family:inherit; font-size:11.5px; padding:3px 6px; max-width:150px;
+    border:1px solid var(--line); border-radius:7px; background:var(--card); color:var(--ink-soft);}
+  .tour-audio .sp{margin-left:auto;}
   .tour-card{z-index:2010;}
   /* A modal being demonstrated has to sit above the dimming shadow but below
      the tour card, or the step explaining it is hidden behind it. */
@@ -1761,6 +1771,92 @@ async function applyStaged(){
   staged={}; sortMaster(); await persist(); renderAll();
 }
 
+
+/* ============================================================================ NARRATION
+   The browser's own speech synthesis: no service, no key, no cost, and it keeps
+   working offline. The voices come from the operating system, so the list is
+   whatever this machine has rather than something chosen here. British voices
+   are offered first because they are what was asked for, and anything obviously
+   novelty is left out. */
+let ttsOn=false, ttsVoice=null, ttsVoices=[];
+
+const TTS_PREFER=[            // best first, matched loosely against voice names
+  'Google UK English Female','Google UK English Male',
+  'Microsoft Hazel','Microsoft Susan','Microsoft George','Microsoft Ryan','Microsoft Sonia',
+  'Daniel','Serena','Kate','Oliver','Libby',
+  'Google US English','Microsoft Zira','Microsoft David','Samantha','Alex'
+];
+const TTS_SKIP=/albert|bad news|bahh|bells|boing|bubbles|cellos|deranged|good news|jester|organ|superstar|trinoids|whisper|wobble|zarvox|junior|ralph|fred|grandma|grandpa|rocko|shelley|sandy|eddy|flo|reed|rishi/i;
+
+function ttsList(){
+  const all=(speechSynthesis.getVoices()||[])
+    .filter(v=>/^en(-|_|$)/i.test(v.lang) && !TTS_SKIP.test(v.name));
+  const score=v=>{
+    const i=TTS_PREFER.findIndex(p=>v.name.toLowerCase().includes(p.toLowerCase()));
+    return (i<0?99:i) + (/^en-GB/i.test(v.lang)?0:50);   // British first
+  };
+  return all.sort((a,b)=>score(a)-score(b)||a.name.localeCompare(b.name));
+}
+
+async function ttsInit(){
+  if(!('speechSynthesis' in window)) return;
+  ttsVoices=ttsList();
+  if(!ttsVoices.length){                       // Chrome populates these late
+    await new Promise(r=>{ speechSynthesis.onvoiceschanged=r; setTimeout(r,1200); });
+    ttsVoices=ttsList();
+  }
+  const saved=await idbGet('ttsVoice');
+  ttsVoice=ttsVoices.find(v=>v.name===saved) || ttsVoices[0] || null;
+  ttsOn=!!(await idbGet('ttsOn'));
+}
+
+/* Read the step aloud from its text, not its markup: the body is HTML, and a
+   screen reading of "<strong>" helps nobody. */
+function ttsSpeak(title, html){
+  if(!ttsOn||!ttsVoice||!('speechSynthesis' in window)) return;
+  speechSynthesis.cancel();
+  const tmp=document.createElement('div');
+  tmp.innerHTML=html;
+  const text=(title+'. '+tmp.textContent).replace(/\s+/g,' ').trim();
+  const u=new SpeechSynthesisUtterance(text);
+  u.voice=ttsVoice; u.rate=0.95; u.pitch=1; u.volume=1;
+  speechSynthesis.speak(u);
+}
+const ttsStop=()=>{ if('speechSynthesis' in window) speechSynthesis.cancel(); };
+
+function ttsControls(){
+  if(!('speechSynthesis' in window)||!ttsVoices.length) return '';
+  return `<div class="tour-audio">
+    <button id="ttsToggle" class="${ttsOn?'on':''}" title="${ttsOn?'Stop reading the steps aloud':'Read the steps aloud'}">
+      ${ttsOn?'🔊 Reading aloud':'🔈 Read aloud'}</button>
+    <select id="ttsPick" title="Voices come from this computer">${ttsVoices.map(v=>
+      `<option value="${esc(v.name)}"${v===ttsVoice?' selected':''}>${esc(v.name.replace(/^Microsoft |^Google /,''))}${/^en-GB/i.test(v.lang)?' (UK)':''}</option>`).join('')}</select>
+    <button class="sp" id="ttsTry" title="Hear this voice">Preview</button>
+  </div>`;
+}
+
+function ttsWire(step){
+  const t=$('ttsToggle'); if(!t) return;
+  t.onclick=async()=>{
+    ttsOn=!ttsOn; await idbSet('ttsOn',ttsOn);
+    if(ttsOn) ttsSpeak(step.title, step.body); else ttsStop();
+    drawTour(false);
+  };
+  $('ttsPick').onchange=async e=>{
+    ttsVoice=ttsVoices.find(v=>v.name===e.target.value)||ttsVoice;
+    await idbSet('ttsVoice', ttsVoice?.name||null);
+    ttsStop();
+    const u=new SpeechSynthesisUtterance('This is how the guide will sound.');
+    u.voice=ttsVoice; u.rate=0.95; speechSynthesis.speak(u);
+  };
+  $('ttsTry').onclick=()=>{
+    ttsStop();
+    const u=new SpeechSynthesisUtterance(
+      'This is how the guide will sound. Nothing you edit changes the glossary straight away.');
+    u.voice=ttsVoice; u.rate=0.95; speechSynthesis.speak(u);
+  };
+}
+
 /* ============================================================================ GUIDED TOUR
    Steps point at real elements rather than describing them, and any step whose
    target is not on screen is skipped — the panel changes shape with the state
@@ -1939,7 +2035,8 @@ const tourVisible=sel=>{
   return r.width>0 && r.height>0;
 };
 
-function startTour(){
+async function startTour(){
+  await ttsInit();
   // Rebuilt each time: which sections exist depends on the state of the work.
   // A step with a demo creates its own target — the edit form is not open and
   // the pending panel does not exist until the step opens them — so those are
@@ -1963,6 +2060,7 @@ function startTour(){
 }
 
 function endTour(){
+  ttsStop();
   tourExit();
   document.body.classList.remove('tour-running');
   tourOn=false;
@@ -2005,7 +2103,7 @@ function drawTour(scroll, jump){
 
   if(scroll){
     card.innerHTML=`<div class="tour-step">Step ${tourAt+1} of ${tourSteps.length}</div>
-      <h3>${esc(step.title)}</h3>${step.body}
+      <h3>${esc(step.title)}</h3>${ttsControls()}${step.body}
       <div class="tour-foot">
         <span class="tour-dots">${tourSteps.map((_,i)=>
           `<span class="tour-dot ${i===tourAt?'on':i<tourAt?'done':''}" data-tdot="${i}"></span>`).join('')}</span>
@@ -2015,6 +2113,8 @@ function drawTour(scroll, jump){
     $('tourNext').onclick=()=>tourGo(1);
     if($('tourBack')) $('tourBack').onclick=()=>tourGo(-1);
       card.querySelectorAll('[data-tdot]').forEach(dd=>dd.onclick=()=>tourMove(+dd.dataset.tdot));
+    ttsWire(step);
+    ttsSpeak(step.title, step.body);
   }
 
   /* Deliberately after the card is written: the scroll below is calculated from
