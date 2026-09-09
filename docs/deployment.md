@@ -71,6 +71,13 @@ Defensible if the AWS team would rather not hand-assemble the pieces above.
 
 ---
 
+## The members' copy
+
+The spreadsheet is not served from this site. The public page links to the MISMO Resource
+Library, which is behind the MISMO/MBA sign-in, and the file is uploaded there by the
+facilitator after each release. A static site cannot enforce membership, so it does not
+pretend to — access control stays where it already exists.
+
 ## Cache behaviour
 
 Worth getting right up front, because it is annoying to retrofit:

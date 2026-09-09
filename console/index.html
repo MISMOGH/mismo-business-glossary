@@ -2012,6 +2012,127 @@ function ttsWire(step){
   };
 }
 
+/* ============================================================================ EXCEL EXPORT
+   A real .xlsx, written here rather than pulled from a library: the page has no
+   build step and no dependencies, and a spreadsheet library would be half a
+   megabyte to save one button. An .xlsx is a ZIP of XML parts, so what follows
+   is a small ZIP writer and the four parts Excel needs.
+
+   Deflate comes from the browser's own CompressionStream where available; where
+   it is not, entries are stored uncompressed, which Excel reads equally well. */
+const crcTable=(()=>{ const t=new Uint32Array(256);
+  for(let i=0;i<256;i++){ let c=i; for(let k=0;k<8;k++) c=c&1?0xEDB88320^(c>>>1):c>>>1; t[i]=c>>>0; }
+  return t; })();
+function crc32(buf){ let c=0xFFFFFFFF;
+  for(let i=0;i<buf.length;i++) c=crcTable[(c^buf[i])&0xFF]^(c>>>8);
+  return (c^0xFFFFFFFF)>>>0; }
+
+async function deflateRaw(bytes){
+  if(typeof CompressionStream!=='function') return null;
+  try{
+    const cs=new CompressionStream('deflate-raw');
+    const buf=await new Response(new Blob([bytes]).stream().pipeThrough(cs)).arrayBuffer();
+    return new Uint8Array(buf);
+  }catch(e){ return null; }
+}
+
+async function zipFile(files){
+  const enc=new TextEncoder(), chunks=[], central=[];
+  let offset=0;
+  const u16=n=>[n&255,(n>>8)&255];
+  const u32=n=>[n&255,(n>>8)&255,(n>>16)&255,(n>>24)&255];
+  for(const f of files){
+    const nameBytes=enc.encode(f.name);
+    const raw=enc.encode(f.data);
+    const packed=await deflateRaw(raw);
+    const method=packed?8:0, body=packed||raw;
+    const crc=crc32(raw);
+    const head=[...u32(0x04034b50),...u16(20),...u16(0),...u16(method),...u16(0),...u16(0),
+                ...u32(crc),...u32(body.length),...u32(raw.length),
+                ...u16(nameBytes.length),...u16(0)];
+    chunks.push(new Uint8Array(head), nameBytes, body);
+    central.push([...u32(0x02014b50),...u16(20),...u16(20),...u16(0),...u16(method),...u16(0),...u16(0),
+                  ...u32(crc),...u32(body.length),...u32(raw.length),
+                  ...u16(nameBytes.length),...u16(0),...u16(0),...u16(0),...u16(0),...u32(0),
+                  ...u32(offset)], nameBytes);
+    offset+=head.length+nameBytes.length+body.length;
+  }
+  const cd=[]; let cdLen=0;
+  for(let i=0;i<central.length;i+=2){
+    const a=new Uint8Array(central[i]), b=central[i+1];
+    cd.push(a,b); cdLen+=a.length+b.length;
+  }
+  const n=files.length;
+  cd.push(new Uint8Array([...u32(0x06054b50),...u16(0),...u16(0),...u16(n),...u16(n),
+                          ...u32(cdLen),...u32(offset),...u16(0)]));
+  return new Blob([...chunks,...cd],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+}
+
+const xmlEsc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[c]))
+  // Excel rejects control characters outright, and the glossary has had stray ones before.
+  .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g,'');
+
+/* Produced here because the file has to be produced by someone: the public page
+   points members at the Resource Library, and this is what is uploaded there
+   after a version is published. */
+async function downloadExcel(btn){
+  const label=btn?btn.textContent:'';
+  if(btn){ btn.disabled=true; btn.textContent='Preparing…'; }
+  try{
+    const names=v=>splitMulti(v).map(id=>{const t=termById(id); return t?t.Term:id;}).join(' | ');
+    const head=['ID','Term','Definition','Source','Term Type','Focus Area',
+                'Also Known As (AKA)','Related Terms'];
+    const rows=master.map(r=>[r.ID,r.Term,r.Definition,r.Source,r.TermType,r.FocusArea,
+                              names(r.AKA),names(r.Related)]);
+    // inlineStr keeps every value in the sheet, so there is no shared-string
+    // table to keep in step — simpler, and the file is zipped anyway.
+    const cell=(v,r,c)=>`<c r="${String.fromCharCode(65+c)}${r}" t="inlineStr"><is><t xml:space="preserve">${xmlEsc(v)}</t></is></c>`;
+    const sheet=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<dimension ref="A1:H${rows.length+1}"/>
+<sheetPr><outlinePr summaryBelow="0"/></sheetPr>
+<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>
+<cols><col min="1" max="1" width="38"/><col min="2" max="2" width="42"/><col min="3" max="3" width="90"/>
+<col min="4" max="4" width="34"/><col min="5" max="5" width="16"/><col min="6" max="6" width="30"/>
+<col min="7" max="8" width="30"/></cols>
+<sheetData>
+<row r="1">${head.map((h,i)=>cell(h,1,i)).join('')}</row>
+${rows.map((r,i)=>`<row r="${i+2}">${r.map((v,c)=>cell(v,i+2,c)).join('')}</row>`).join('')}
+</sheetData>
+<autoFilter ref="A1:H${rows.length+1}"/>
+</worksheet>`;
+    const blob=await zipFile([
+      {name:'[Content_Types].xml', data:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+<Default Extension="xml" ContentType="application/xml"/>
+<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>`},
+      {name:'_rels/.rels', data:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`},
+      {name:'xl/workbook.xml', data:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+ xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+<sheets><sheet name="Business Glossary" sheetId="1" r:id="rId1"/></sheets></workbook>`},
+      {name:'xl/_rels/workbook.xml.rels', data:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>`},
+      {name:'xl/worksheets/sheet1.xml', data:sheet}
+    ]);
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    a.download=`MISMO-Business-Glossary-${new Date().toISOString().slice(0,10)}.xlsx`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+  }catch(err){
+    alert(`The download could not be prepared.\n\n${err.message}`);
+  }finally{ if(btn){ btn.disabled=false; btn.textContent=label; } }
+}
+
 /* ============================================================================ LINKS IN DEFINITIONS
    The same syntax the public page renders. It is plain text, so it survives a
    change-set CSV and MISMO's upload format unchanged:
@@ -3195,6 +3316,9 @@ function renderRail(){
         <p class="drhint">A backup is a CSV of the whole glossary, saved to your computer and
           readable in Excel. The draft, classifications and release history live in the
           repository.</p>
+        <button class="btn" id="railExcel" style="width:100%;">Download Excel (.xlsx)</button>
+        <p class="drhint" style="margin:6px 0 9px;">The spreadsheet members download from the
+          Resource Library. Produce it after publishing and upload it there.</p>
         <button class="btn" id="railBackup" style="width:100%;">Download a backup</button>
         <button class="btn" id="railRestore" style="width:100%;">Restore from a backup…</button>
         <button class="btn" id="railVersions" style="width:100%;">Past versions${releases.length?` (${releases.length})`:''}</button>
@@ -3225,6 +3349,7 @@ function renderRail(){
   on('railLoad',e=>loadFromRepo(e.target));
   on('railVersions',()=>{ renderVersions(); $('verBg').classList.add('open'); });
   on('railImport',()=>{ $('importSummary').innerHTML=''; $('importBg').classList.add('open'); });
+  on('railExcel',e=>downloadExcel(e.target));
   on('railBackup',exportBackup);
   on('railRestore',()=>$('restoreFile').click());
   on('railSignout',()=>$('repoForget').click());

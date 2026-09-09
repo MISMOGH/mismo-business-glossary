@@ -54,6 +54,17 @@ any other publishing credential.
 When the token expires the console says so plainly, keeps the draft safe locally, and
 carries on letting them edit. Nothing is lost; it just stops saving until reconnected.
 
+## The members' spreadsheet
+
+The public glossary points members at the MISMO Resource Library for a spreadsheet copy:
+
+  https://collaborate.mismo.org/viewdocument/business-glossary
+
+That file has to be produced, and **Download Excel (.xlsx)** under *Backups & earlier
+versions* is what produces it — every term with its classifications and links, as a real
+spreadsheet with a frozen header and filters. Produce it after publishing a version and
+upload it to the Resource Library, so the two do not drift apart.
+
 ## Classification descriptions
 
 Each term type, focus area and source carries a description, and that is what appears
