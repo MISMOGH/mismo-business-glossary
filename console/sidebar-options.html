@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Console sidebar — options</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Libre+Franklin:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#101B33; --ink-soft:#4B5670; --ink-faint:#7A8299;
+    --paper:#F1F3F9; --card:#FFFFFF; --line:#E1E4EC; --line-soft:#EDEFF5;
+    --brand:#125DAB; --brand-soft:#E7EFF7; --brand-text:#0E4680;
+    --add:#157A44; --add-soft:#E7F7EE; --add-text:#157A44;
+    --upd:#D97706; --upd-soft:#FEF3E2; --upd-text:#A85F06;
+    --rem:#B4232C; --rem-soft:#FDECEC; --rem-text:#B4232C;
+    --radius:12px; --shadow:0 1px 2px rgba(16,27,51,.04), 0 4px 14px rgba(16,27,51,.05);
+  }
+  *{box-sizing:border-box;}
+  body{margin:0; background:var(--paper); color:var(--ink);
+       font-family:'Libre Franklin',system-ui,sans-serif; font-size:14px;}
+  .doc{background:#101B33; color:#fff; padding:26px 24px;}
+  .doc-in{max-width:1500px; margin:0 auto;}
+  .doc h1{margin:0 0 6px; font-size:21px;}
+  .doc p{margin:0 0 6px; font-size:13.5px; color:#B9C2D6; max-width:900px; line-height:1.6;}
+  .wrap{max-width:1500px; margin:0 auto; padding:34px 24px 80px;}
+  .cols{display:grid; grid-template-columns:repeat(3,1fr); gap:26px; align-items:start;}
+  @media (max-width:1180px){ .cols{grid-template-columns:1fr;} }
+  .opt-tag{display:inline-block; font-size:10.5px; font-weight:700; letter-spacing:.06em;
+        text-transform:uppercase; background:var(--brand); color:#fff; padding:4px 9px; border-radius:5px;}
+  .opt h2{margin:10px 0 5px; font-size:17px;}
+  .opt > p{margin:0 0 6px; font-size:13px; color:var(--ink-soft); line-height:1.6;}
+  .opt .note{font-size:12.5px; color:var(--ink-faint); line-height:1.6; margin:12px 0 0;}
+  .opt .note strong{color:var(--ink-soft);}
+
+  /* ---------- shared rail chrome ---------- */
+  .rail{background:var(--card); border:1px solid var(--line); border-radius:var(--radius);
+        box-shadow:var(--shadow); overflow:hidden; margin-top:16px;}
+  .rsec{padding:14px 15px; border-bottom:1px solid var(--line);}
+  .rsec:last-child{border-bottom:none;}
+  .rk{font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.06em;
+      color:var(--ink-faint); margin-bottom:10px;}
+  .rline{display:flex; justify-content:space-between; align-items:baseline; font-size:13px; padding:3px 0;}
+  .rline .v{font-weight:700; font-variant-numeric:tabular-nums;}
+  .rline a{color:var(--brand); text-decoration:none;}
+  .rline a:hover{text-decoration:underline;}
+  .btn{display:block; width:100%; text-align:center; font-family:inherit; font-size:12.5px;
+       font-weight:600; padding:8px 12px; border-radius:8px; border:1px solid var(--line);
+       background:var(--card); color:var(--ink); cursor:pointer; margin-top:7px;}
+  .btn:hover{border-color:var(--brand); color:var(--brand-text);}
+  .btn.warn{background:var(--upd); border-color:var(--upd); color:#fff;}
+  .btn.primary{background:var(--brand); border-color:var(--brand); color:#fff;}
+  .btn.quiet{border-color:transparent; color:var(--ink-soft); font-weight:500;}
+  .btn.quiet:hover{border-color:var(--line); color:var(--ink);}
+  .dot{width:8px; height:8px; border-radius:50%; display:inline-block; flex:0 0 auto;}
+  .dot.g{background:var(--add);} .dot.a{background:var(--upd);} .dot.r{background:var(--rem);}
+  .state{display:flex; gap:8px; align-items:flex-start; font-size:12.5px; color:var(--ink-soft);
+         line-height:1.5;}
+  .state b{color:var(--ink); font-weight:600;}
+  .when{font-variant-numeric:tabular-nums;}
+
+  /* ---------- A ---------- */
+  .a-status{padding:14px 15px; background:var(--add-soft); border-bottom:1px solid var(--line);}
+  .a-status .h{display:flex; align-items:center; gap:8px; font-size:13.5px; font-weight:700;
+               color:var(--add-text); margin-bottom:8px;}
+  .a-row{display:flex; justify-content:space-between; gap:10px; font-size:12px;
+         color:var(--ink-soft); padding:2px 0;}
+  .a-row .t{white-space:nowrap; font-variant-numeric:tabular-nums;}
+
+  /* ---------- B ---------- */
+  .b-tl{position:relative; padding-left:17px;}
+  .b-tl:before{content:''; position:absolute; left:3px; top:6px; bottom:6px; width:2px;
+               background:var(--line);}
+  .b-ev{position:relative; padding:0 0 13px;}
+  .b-ev:last-child{padding-bottom:0;}
+  .b-ev:before{content:''; position:absolute; left:-17px; top:5px; width:8px; height:8px;
+               border-radius:50%; background:var(--line); border:2px solid var(--card);}
+  .b-ev.on:before{background:var(--add);}
+  .b-ev .lbl{font-size:12.5px; font-weight:600;}
+  .b-ev .sub{font-size:11.5px; color:var(--ink-faint); font-variant-numeric:tabular-nums;}
+
+  /* ---------- C ---------- */
+  .c-grp{border:1px solid var(--line); border-radius:9px; overflow:hidden; margin-top:9px;}
+  .c-grp summary{list-style:none; cursor:pointer; padding:9px 12px; font-size:12.5px;
+                 font-weight:600; color:var(--ink-soft); background:var(--paper);
+                 display:flex; align-items:center; gap:7px;}
+  .c-grp summary::-webkit-details-marker{display:none;}
+  .c-grp summary:after{content:'▾'; margin-left:auto; font-size:10px; color:var(--ink-faint);}
+  .c-grp[open] summary:after{content:'▴';}
+  .c-grp summary:hover{background:var(--brand-soft); color:var(--brand-text);}
+  .c-body{padding:10px 12px 12px;}
+  .c-body .btn{margin-top:6px;}
+  .c-body .btn:first-child{margin-top:0;}
+  .c-hint{font-size:11.5px; color:var(--ink-faint); line-height:1.5; margin:0 0 8px;}
+</style>
+</head>
+<body>
+
+<div class="doc"><div class="doc-in">
+  <h1>Console sidebar — three reimagined versions</h1>
+  <p>All three add the time to the last backup, and fold <strong>Repository</strong> and <strong>More</strong>
+     together. Both of those headings name the machinery rather than the job: a facilitator has no reason to
+     know what a repository is, and "More" says nothing at all.</p>
+  <p>They also separate two things the current sidebar runs together. The <strong>draft save</strong> is
+     automatic and is the real safety net. The <strong>backup</strong> is a file you download by hand and is
+     an escape hatch. Sitting adjacent under different headings, they read as two versions of the same thing.</p>
+</div></div>
+
+<div class="wrap"><div class="cols">
+
+<!-- ============================================ OPTION A -->
+<div class="opt">
+  <span class="opt-tag">Option A</span>
+  <h2>Say it in sentences</h2>
+  <p>Leads with a plain statement of whether the work is safe, with all three timestamps in one block so
+     they can be compared at a glance. Everything else is grouped by what it is for, not by where it goes.</p>
+
+  <div class="rail">
+    <div class="a-status">
+      <div class="h"><span class="dot g"></span> Everything is saved</div>
+      <div class="a-row"><span>Published version 4</span><span class="t">8 Sep, 9:41 PM</span></div>
+      <div class="a-row"><span>Draft saved online</span><span class="t">8 Sep, 10:16 PM</span></div>
+      <div class="a-row"><span>Backup file downloaded</span><span class="t">8 Sep, 4:02 PM</span></div>
+    </div>
+
+    <div class="rsec">
+      <div class="rk">The glossary</div>
+      <div class="rline"><span>Terms</span><span class="v">8,397</span></div>
+      <div class="rline"><a href="#">Term types</a><span class="v">9</span></div>
+      <div class="rline"><a href="#">Focus areas</a><span class="v">17</span></div>
+      <div class="rline"><a href="#">Sources</a><span class="v">11</span></div>
+      <button class="btn">Manage classifications</button>
+    </div>
+
+    <div class="rsec">
+      <div class="rk">Needs a decision</div>
+      <div class="rline"><span>Flagged for review</span><span class="v" style="color:var(--upd-text)">1</span></div>
+      <div class="state" style="margin-top:4px;">None can be corrected automatically.</div>
+      <button class="btn warn">Review the 1 issue</button>
+    </div>
+
+    <div class="rsec">
+      <div class="rk">This version</div>
+      <div class="state"><span class="dot g"></span><span>No changes since version 4 was published.</span></div>
+      <button class="btn">See what changed</button>
+    </div>
+
+    <div class="rsec">
+      <div class="rk">Saving &amp; history</div>
+      <p class="c-hint">Your draft saves itself online every hour. A backup is a copy on your own computer.</p>
+      <button class="btn">Save draft now</button>
+      <button class="btn">Download a backup</button>
+      <button class="btn quiet">Past versions (4)</button>
+      <button class="btn quiet">Import a change-set…</button>
+      <button class="btn quiet">Restore from a backup…</button>
+      <button class="btn quiet">Sign out — Perry Williams</button>
+    </div>
+  </div>
+
+  <p class="note"><strong>Why:</strong> "Everything is saved" is the question being asked; the timestamps
+     answer it. Putting all three together also makes a stale backup obvious, which two separate
+     sections hid.</p>
+</div>
+
+<!-- ============================================ OPTION B -->
+<div class="opt">
+  <span class="opt-tag">Option B</span>
+  <h2>A timeline of the work</h2>
+  <p>Treats saving as a sequence rather than a set of buttons: what is published, what is saved online,
+     what is on your machine. The order is the order things happen in, so where the work currently stands
+     is readable without knowing any of the terminology.</p>
+
+  <div class="rail">
+    <div class="rsec">
+      <div class="rk">The glossary</div>
+      <div class="rline"><span>Terms</span><span class="v">8,397</span></div>
+      <div class="rline"><a href="#">Term types</a><span class="v">9</span></div>
+      <div class="rline"><a href="#">Focus areas</a><span class="v">17</span></div>
+      <div class="rline"><a href="#">Sources</a><span class="v">11</span></div>
+      <button class="btn">Manage classifications</button>
+    </div>
+
+    <div class="rsec">
+      <div class="rk">Flagged for review</div>
+      <div class="rline"><span>Open</span><span class="v" style="color:var(--upd-text)">1</span></div>
+      <button class="btn warn">Review</button>
+    </div>
+
+    <div class="rsec">
+      <div class="rk">Where your work stands</div>
+      <div class="b-tl">
+        <div class="b-ev on">
+          <div class="lbl">Live on the public site</div>
+          <div class="sub">Version 4 · 8 Sep, 9:41 PM</div>
+        </div>
+        <div class="b-ev on">
+          <div class="lbl">Saved online, not yet published</div>
+          <div class="sub">No changes yet · last saved 8 Sep, 10:16 PM</div>
+        </div>
+        <div class="b-ev">
+          <div class="lbl">Backup on this computer</div>
+          <div class="sub">8 Sep, 4:02 PM</div>
+        </div>
+      </div>
+      <button class="btn">Save draft now</button>
+      <button class="btn">Download a backup</button>
+    </div>
+
+    <div class="rsec">
+      <div class="rk">Bring work in or out</div>
+      <button class="btn quiet">Past versions (4)</button>
+      <button class="btn quiet">Import a change-set…</button>
+      <button class="btn quiet">Load the online copy…</button>
+      <button class="btn quiet">Restore from a backup…</button>
+    </div>
+
+    <div class="rsec">
+      <div class="state"><span class="dot g"></span><span>Signed in as <b>Perry Williams</b></span></div>
+      <button class="btn quiet">Sign out</button>
+    </div>
+  </div>
+
+  <p class="note"><strong>Why:</strong> the three states are genuinely sequential, and showing them that way
+     answers "is my work safe, and how far has it got" in one glance. It also makes publishing feel like
+     the last step of a journey rather than an unrelated button.</p>
+</div>
+
+<!-- ============================================ OPTION C -->
+<div class="opt">
+  <span class="opt-tag">Option C</span>
+  <h2>Routine up front, rest folded away</h2>
+  <p>Keeps the four things done weekly in plain sight and puts the rest behind two labelled drawers.
+     Closest to today's layout, so the least to relearn, but nothing is called "More".</p>
+
+  <div class="rail">
+    <div class="rsec">
+      <div class="rk">The glossary</div>
+      <div class="rline"><span>Terms</span><span class="v">8,397</span></div>
+      <div class="rline"><a href="#">Term types</a><span class="v">9</span></div>
+      <div class="rline"><a href="#">Focus areas</a><span class="v">17</span></div>
+      <div class="rline"><a href="#">Sources</a><span class="v">11</span></div>
+      <button class="btn">Manage classifications</button>
+    </div>
+
+    <div class="rsec">
+      <div class="rk">Flagged for review</div>
+      <div class="rline"><span>Open</span><span class="v" style="color:var(--upd-text)">1</span></div>
+      <div class="rline"><span>Fixable automatically</span><span class="v">0</span></div>
+      <button class="btn warn">Review</button>
+    </div>
+
+    <div class="rsec">
+      <div class="rk">Unpublished changes</div>
+      <div class="state"><span class="dot g"></span><span>Matches published version 4</span></div>
+      <button class="btn">See what changed</button>
+    </div>
+
+    <div class="rsec">
+      <div class="rk">Your work is safe</div>
+      <div class="a-row"><span>Saved online</span><span class="t">8 Sep, 10:16 PM</span></div>
+      <div class="a-row"><span>Backup downloaded</span><span class="t">8 Sep, 4:02 PM</span></div>
+      <div class="state" style="margin-top:8px;"><span class="dot g"></span><span>Saves itself every hour, as <b>Perry Williams</b></span></div>
+      <button class="btn">Save draft now</button>
+
+      <details class="c-grp">
+        <summary>Backups &amp; earlier versions</summary>
+        <div class="c-body">
+          <p class="c-hint">A backup is a single file on your computer holding the draft, the
+             classifications and the release history.</p>
+          <button class="btn">Download a backup</button>
+          <button class="btn">Restore from a backup…</button>
+          <button class="btn">Past versions (4)</button>
+        </div>
+      </details>
+
+      <details class="c-grp">
+        <summary>Replace what is in this browser</summary>
+        <div class="c-body">
+          <p class="c-hint">These discard what is here and load from elsewhere. Save the draft first if it
+             is ahead.</p>
+          <button class="btn">Load the online copy…</button>
+          <button class="btn">Import a change-set…</button>
+          <button class="btn quiet">Sign out</button>
+        </div>
+      </details>
+    </div>
+  </div>
+
+  <p class="note"><strong>Why:</strong> import, restore and load-from-online are rare and each replaces
+     work. Grouping them under a heading that says so is a guardrail as much as a tidy-up — they sat one
+     click from "Download a backup" in a list called "More".</p>
+</div>
+
+</div>
+
+<div style="max-width:1500px; margin:44px auto 0; padding:0 24px;">
+  <h2 style="font-size:17px; margin:0 0 8px;">What they share</h2>
+  <p style="font-size:13.5px; color:var(--ink-soft); line-height:1.7; max-width:900px; margin:0 0 10px;">
+    All three drop the words <strong>Repository</strong> and <strong>More</strong>. They give the backup a
+    time as well as a date, and they say in plain words that the draft saves itself — which is the single
+    most reassuring fact in the panel and was previously only implied by a timestamp.</p>
+  <p style="font-size:13.5px; color:var(--ink-soft); line-height:1.7; max-width:900px; margin:0;">
+    They differ in how much is visible at once. <strong>A</strong> shows everything and leads with a verdict.
+    <strong>B</strong> shows everything and orders it by what happens when. <strong>C</strong> shows the
+    routine four and folds the rest away behind headings that warn what is inside.</p>
+</div>
+</div>
+
+</body>
+</html>
