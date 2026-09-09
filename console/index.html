@@ -1779,18 +1779,23 @@ async function applyStaged(){
    are offered first because they are what was asked for, and anything obviously
    novelty is left out. */
 let ttsOn=false, ttsVoice=null, ttsVoices=[];
+/* Every utterance carries a sequence number. Cancelling raises 'end' in some
+   browsers and 'error' in others, so a finished utterance is only trusted to
+   advance the tour if it is still the current one — otherwise moving back a
+   step would immediately jump forward again. */
+let ttsSeq=0, ttsNext=null;
 
-/* Libby first by request. She is one of Microsoft's neural voices, exposed to
-   the browser as "Microsoft Libby Online (Natural)" — markedly better than the
-   older built-in voices, but only in Edge, and only with a network connection,
-   since the audio is synthesised remotely. Everything else is a fallback for
-   browsers and machines that do not have her. */
+/* Andrew Multilingual first by choice. Like the other neural voices he is
+   exposed only by Microsoft Edge and synthesised remotely, so he needs a
+   network connection. Everything below him is a fallback for browsers and
+   machines that do not have him. */
 const TTS_PREFER=[            // best first, matched loosely against voice names
+  'Andrew Multilingual','Andrew',                            // chosen default
   'Libby','Sonia','Maisie','Ryan','Thomas',                  // en-GB neural, Edge
+  'Aria','Jenny','Guy','Brian','Emma',                       // en-US neural
   'Google UK English Female','Google UK English Male',
   'Microsoft Hazel','Microsoft Susan','Microsoft George',
   'Daniel','Serena','Kate','Oliver',
-  'Aria','Jenny','Guy',                                      // en-US neural
   'Google US English','Microsoft Zira','Microsoft David','Samantha','Alex'
 ];
 const TTS_NATURAL=/online \(natural\)|neural/i;
@@ -1799,11 +1804,14 @@ const TTS_SKIP=/albert|bad news|bahh|bells|boing|bubbles|cellos|deranged|good ne
 function ttsList(){
   const all=(speechSynthesis.getVoices()||[])
     .filter(v=>/^en(-|_|$)/i.test(v.lang) && !TTS_SKIP.test(v.name));
+  /* The named preference dominates, so a chosen voice is not demoted for being
+     the wrong side of the Atlantic. A neural voice still beats a built-in one,
+     and region only breaks ties. */
   const score=v=>{
     const i=TTS_PREFER.findIndex(p=>v.name.toLowerCase().includes(p.toLowerCase()));
-    return (i<0?99:i)
-      + (/^en-GB/i.test(v.lang)?0:60)        // British first
-      - (TTS_NATURAL.test(v.name)?40:0);     // a neural voice beats a built-in one
+    return (i<0?99:i)*10
+      + (TTS_NATURAL.test(v.name)?0:5)
+      + (/^en-GB/i.test(v.lang)?0:1);
   };
   return all.sort((a,b)=>score(a)-score(b)||a.name.localeCompare(b.name));
 }
@@ -1828,8 +1836,17 @@ function ttsSpeak(title, html){
   const tmp=document.createElement('div');
   tmp.innerHTML=html;
   const text=(title+'. '+tmp.textContent).replace(/\s+/g,' ').trim();
+  const my=++ttsSeq;
   const u=new SpeechSynthesisUtterance(text);
   u.voice=ttsVoice; u.rate=0.95; u.pitch=1; u.volume=1;
+  /* Moves on when the reading finishes, with a beat afterwards so a step does
+     not vanish the instant the last word lands. The final step is left on
+     screen rather than closing the tour on its own. */
+  u.onend=()=>{
+    if(my!==ttsSeq || !ttsOn || !tourOn) return;
+    if(tourAt>=tourSteps.length-1) return;
+    ttsNext=setTimeout(()=>{ if(my===ttsSeq && ttsOn && tourOn) tourGo(1); }, 900);
+  };
   /* A neural voice is synthesised remotely, so it fails when the network does.
      Falling back to a local voice keeps the narration working rather than
      leaving it mysteriously silent. */
@@ -1848,13 +1865,18 @@ function ttsSpeak(title, html){
   };
   speechSynthesis.speak(u);
 }
-const ttsStop=()=>{ if('speechSynthesis' in window) speechSynthesis.cancel(); };
+const ttsStop=()=>{
+  ttsSeq++;                       // invalidates any utterance still in flight
+  clearTimeout(ttsNext); ttsNext=null;
+  if('speechSynthesis' in window) speechSynthesis.cancel();
+};
 
 function ttsControls(){
   if(!('speechSynthesis' in window)||!ttsVoices.length) return '';
   return `<div class="tour-audio">
     <button id="ttsToggle" class="${ttsOn?'on':''}" title="${ttsOn?'Stop reading the steps aloud':'Read the steps aloud'}">
       ${ttsOn?'🔊 Reading aloud':'🔈 Read aloud'}</button>
+    ${ttsOn?`<span style="font-size:11px; color:var(--ink-faint);">moves on by itself</span>`:''}
     <select id="ttsPick" title="Voices come from this browser and computer">${ttsVoices.map(v=>{
       const short=v.name.replace(/^Microsoft |^Google /,'')
                         .replace(/\s*Online \(Natural\)\s*/i,'')
@@ -1863,7 +1885,6 @@ function ttsControls(){
                  .filter(Boolean).join(', ');
       return `<option value="${esc(v.name)}"${v===ttsVoice?' selected':''}>${esc(short)} (${tags})</option>`;
     }).join('')}</select>
-    <button class="sp" id="ttsTry" title="Hear this voice">Preview</button>
   </div>${ttsVoices.some(v=>TTS_NATURAL.test(v.name))?'':
     `<p class="drhint" style="margin:-4px 0 10px;">Only this computer's built-in voices are available.
       The natural-sounding ones, including Libby, come with <strong>Microsoft Edge</strong> and need a
@@ -1874,21 +1895,15 @@ function ttsWire(step){
   const t=$('ttsToggle'); if(!t) return;
   t.onclick=async()=>{
     ttsOn=!ttsOn; await idbSet('ttsOn',ttsOn);
-    if(ttsOn) ttsSpeak(step.title, step.body); else ttsStop();
+    ttsStop();
+    if(ttsOn) ttsSpeak(step.title, step.body);
     drawTour(false);
   };
   $('ttsPick').onchange=async e=>{
     ttsVoice=ttsVoices.find(v=>v.name===e.target.value)||ttsVoice;
     await idbSet('ttsVoice', ttsVoice?.name||null);
     ttsStop();
-    const u=new SpeechSynthesisUtterance('This is how the guide will sound.');
-    u.voice=ttsVoice; u.rate=0.95; speechSynthesis.speak(u);
-  };
-  $('ttsTry').onclick=()=>{
-    ttsStop();
-    const u=new SpeechSynthesisUtterance(
-      'This is how the guide will sound. Nothing you edit changes the glossary straight away.');
-    u.voice=ttsVoice; u.rate=0.95; speechSynthesis.speak(u);
+    if(tourOn) ttsSpeak(step.title, step.body);
   };
 }
 
@@ -2118,6 +2133,7 @@ function tourKeys(e){
    the panel vanish and reappear each time. */
 function tourMove(n){
   if(n<0) return;
+  ttsStop();
   const cur=tourSteps[tourAt], nxt=tourSteps[n];
   const carry = nxt && cur && cur.demo && cur.demo===nxt.demo;
   if(!carry) tourExit();
