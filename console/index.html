@@ -554,7 +554,7 @@
   <div class="field"><label>Your name</label><input type="text" id="repoEditor" placeholder="e.g. Jordan Ellis">
     <div class="fh">Recorded on every change so the history says who made it. The access token belongs to the account rather than the person, so without this every entry looks identical no matter who is facilitating.</div></div>
   <div class="field"><label>Repository</label><input type="text" id="repoFull" placeholder="owner/repository">
-    <div class="fh">For example <code>MISMOGH/mismo-business-glossary</code>.</div></div>
+    <div class="fh">For example <code>MISMOStandards/mismo-business-glossary</code>.</div></div>
   <div class="field"><label>Branch</label><input type="text" id="repoBranch" placeholder="main"></div>
   <div class="field"><label>Access token</label><input type="password" id="repoToken" placeholder="github_pat_…">
     <div class="fh">A fine-grained token scoped to this one repository, with <strong>Contents: read and write</strong>. Anyone who can use this browser profile can publish, so treat the machine accordingly.</div></div>
@@ -2480,7 +2480,7 @@ async function restoreBackup(file){
 
    Writes go through the Git Data API (blob -> tree -> commit -> ref), not the
    Contents API, which refuses anything over 1MB. */
-const REPO_DEFAULTS={full:'MISMOGH/mismo-business-glossary', branch:'main'};
+const REPO_DEFAULTS={full:'MISMOStandards/mismo-business-glossary', branch:'main'};
 const DATA_PATH='data/glossary.json';
 const DRAFT_PATH='.console/draft.json';
 const REF_PATH='data/reference.json';
