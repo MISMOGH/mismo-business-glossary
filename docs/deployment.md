@@ -36,7 +36,8 @@ Hand this list to whoever administers the AWS account.
 
 ### 3. ACM certificate
 
-- For the chosen hostname, e.g. `glossary.mismo.org`.
+- For **`glossary.mismo.org`** — decided 8 September 2026.
+- Optionally a second name for the console, e.g. `glossary-admin.mismo.org`. See below.
 - **Must be issued in `us-east-1`**, regardless of which region the bucket lives in.
   CloudFront only reads certificates from that region. This is the single most common
   thing to get wrong.
@@ -100,10 +101,21 @@ Decided and in place. `console/index.html` ships with the site and is served at
 That last point is worth stating plainly for a security review: **there is no path from
 the console to the S3 bucket**, and no human uploads files to it.
 
-If MISMO later wants the console URL itself restricted rather than merely unwritable,
-CloudFront can require a password at the edge before serving the page. That is a small
-addition once the distribution exists, and is the main capability AWS gives us that
-GitHub Pages cannot.
+### Where the console should live
+
+Today the console is served from `/console/` on the same site. That works, but it ties
+the two together in one way that matters: **password protection generally applies to a
+whole site, not a path.** AWS Amplify's built-in protection is per application. On
+CloudFront a path rule is possible but needs an edge function written and maintained.
+
+If MISMO ever wants the editing tool behind a password while the glossary stays public,
+the clean answer is a second hostname — `glossary-admin.mismo.org` — serving the console
+alone. It also keeps an internal tool off the public standards address.
+
+Nothing needs to change today. But **a certificate can cover both names at no extra cost
+if it is requested that way**, and the DNS record can be created at the same time as the
+first. Asking for both now costs nothing; asking later means going back to whoever
+controls the domain for a second round.
 
 ---
 

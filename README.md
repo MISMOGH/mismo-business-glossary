@@ -19,7 +19,7 @@ not share that project's data or design system.
 | Public page | Reads `data/glossary.json` and renders all 8,397 terms. Search, A–Z jump, faceted filtering, shareable permalinks. |
 | Console | Working. Carries the full 8,397-term baseline embedded in the file. |
 | Data files | Extracted and validated. `data/glossary.json` holds all 8,397 terms. |
-| Hosting | Live on GitHub Pages. AWS not yet provisioned — see `docs/deployment.md`. |
+| Hosting | Live on GitHub Pages. Moving to AWS at **glossary.mismo.org** — see `docs/deployment.md`. |
 | Editing | The console reads and writes this repository. Publishing commits `data/glossary.json`; the draft saves daily to `.console/draft.json`. See `docs/console.md`. |
 
 ## Layout
