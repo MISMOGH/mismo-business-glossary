@@ -356,11 +356,10 @@
 
       <div class="card hidden" id="exportCard">
         <div class="card-head"><h2>Pending changes</h2></div>
-        <p class="hint">Nothing here has changed the draft yet. Apply term edits and classification changes separately, or export the term edits as a change-set CSV. Applied classification changes are kept below for the record.</p>
+        <p class="hint">Nothing here has changed the draft yet. Apply term edits and classification changes separately, or export the term edits as a change-set CSV. Once applied they move into <strong>Review changes</strong>.</p>
         <div class="stats" id="changeStats" style="margin-bottom:14px;"></div>
         <div id="validation"></div>
         <div id="vocabPending"></div>
-        <div id="vocabChanges"></div>
         <div id="stagedFilter"></div>
         <div id="stagedList"></div>
         <div style="display:flex; gap:9px; flex-wrap:wrap; margin-top:14px;">
@@ -432,6 +431,7 @@
 <div class="modal-bg" id="draftBg"><div class="modal wide">
   <h2>Draft changes</h2>
   <p class="hint" id="draftSub"></p>
+  <div id="vocabChanges"></div>
   <div id="draftGroups"></div>
   <div class="modal-foot"><button class="btn" id="draftClose">Close</button></div>
 </div></div>
@@ -1321,16 +1321,57 @@ function renderVocabPending(){
   el.querySelectorAll('[data-vundo2]').forEach(b=>b.onclick=()=>unstageVocab(b.dataset.vundo2));
 }
 
+/* Collapse the log to its net effect. Renaming a value and renaming it back
+   leaves the glossary exactly as it was, but the raw history shows two entries
+   that cannot be removed and imply changes that no longer exist. What a reviewer
+   needs is what actually differs from the last published version, not the route
+   taken to get there. */
+function netVocabChanges(){
+  const out=[];
+  for(const f of VOCAB_FIELDS){
+    const ops=vocabLog.filter(v=>v.field===f.key).slice().reverse();  // oldest first
+    const origin=new Map();   // final value -> where it started
+    const added=new Set(), deleted=[];
+    for(const op of ops){
+      if(op.op==='add'){ added.add(op.to); }
+      else if(op.op==='delete'){
+        if(added.has(op.from)) added.delete(op.from);        // added, then removed again
+        else deleted.push({value:origin.has(op.from)?origin.get(op.from):op.from, at:op.at, by:op.by});
+        origin.delete(op.from);
+      }else{                                                  // rename or merge
+        if(added.has(op.from)){ added.delete(op.from); added.add(op.to); }
+        else {
+          const from=origin.has(op.from)?origin.get(op.from):op.from;
+          origin.delete(op.from); origin.set(op.to,from);
+        }
+      }
+    }
+    const last=v=>ops.filter(o=>o.to===v||o.from===v).slice(-1)[0]||{};
+    for(const [now,was] of origin) if(now!==was)
+      out.push({op:'rename',field:f.key,from:was,to:now,...last(now)});
+    for(const v of added) out.push({op:'add',field:f.key,from:null,to:v,...last(v)});
+    for(const d of deleted) out.push({op:'delete',field:f.key,from:d.value,to:null,at:d.at,by:d.by});
+  }
+  // Impact is recounted against the glossary as it now stands, since an
+  // intermediate count would describe a state nobody can see.
+  return out.map(c=>{
+    const f=vfield(c.field), val=c.op==='delete'?c.from:c.to;
+    return {...c, terms: c.op==='add'?0:master.filter(r=>cellValues(r,f).includes(val)).length};
+  }).sort((a,b)=>new Date(b.at||0)-new Date(a.at||0));
+}
+
 function renderVocabChanges(){
   const el=$('vocabChanges');
-  if(!vocabLog.length){ el.innerHTML=''; return; }
+  if(!el) return;
+  const net=netVocabChanges();
+  if(!net.length){ el.innerHTML=''; return; }
   const verb={add:'Added',rename:'Renamed',merge:'Merged',delete:'Deleted'};
   const cls={add:'add',rename:'update',merge:'update',delete:'remove'};
   el.innerHTML=`<div class="cc">
     <div class="cc-h"><span class="chip add">applied</span>
       <strong>Classification changes</strong>
-      <span class="sp">${vocabLog.length} since version ${version-1>0?version-1:'the baseline'}</span></div>
-    ${vocabLog.map(v=>`<div class="cc-row">
+      <span class="sp">${net.length} change${net.length===1?'':'s'} since ${version>1?`version ${version-1}`:'the shipped baseline'}</span></div>
+    ${net.map(v=>`<div class="cc-row">
       <span class="chip ${cls[v.op]}">${verb[v.op]}</span>
       <span class="cc-field">${esc(vfield(v.field)?.label||v.field)}</span>
       <span class="cc-val">
@@ -1586,9 +1627,10 @@ async function publishVersion(){
 
 function openDraft(){ renderDraftModal(); $('draftBg').classList.add('open'); }
 function renderDraftModal(){
+  renderVocabChanges();
   const d=draftDiff();
   const secs=[['added','Added',d.added],['edited','Edited',d.edited],['removed','Removed',d.removed]];
-  $('draftSub').innerHTML=`Changes in the draft since version ${version-1>0?version-1:'baseline'}. `
+  $('draftSub').innerHTML=`Changes in the draft since ${version>1?`version ${version-1}`:'the shipped baseline'}. `
     +`Each can be reverted individually without affecting the others.`;
   $('draftGroups').innerHTML = d.total ? secs.filter(([,,l])=>l.length).map(([kind,label,list])=>`
     <div class="igroup"><div class="ighead"><div>
@@ -2106,12 +2148,12 @@ function renderRail(){
          <div class="rbtns"><button class="btn sm" id="railIssues">Open review</button></div>`}
     </div>
 
-    ${(stagedN||vocabLog.length||vocabPending.length)?`
+    ${(stagedN||vocabPending.length)?`
     <div class="rsec">
       <div class="rk">Pending</div>
       ${stagedN?`<div class="rline"><span>Staged edits</span><span class="v">${stagedN.toLocaleString()}</span></div>`:''}
       ${vocabPending.length?`<div class="rline"><span>Classification changes</span><span class="v" style="color:var(--upd-text)">${vocabPending.length}</span></div>`:''}
-      ${vocabLog.length?`<div class="rline"><span>Applied classifications</span><span class="v">${vocabLog.length}</span></div>`:''}
+
       ${stagedN?`<div class="rstate" style="margin-top:5px;">Staged edits are not in the draft yet.</div>`:''}
       <div class="rbtns"><button class="btn sm" id="railStaged">Review pending</button></div>
     </div>`:''}
@@ -2210,7 +2252,7 @@ function renderAll(){
   $('shell').classList.toggle('hidden',!has);
   $('boot').classList.toggle('hidden',has);
   $('exportCard').classList.toggle('hidden',
-    !has || (!Object.keys(staged).length && !vocabLog.length && !vocabPending.length));
+    !has || (!Object.keys(staged).length && !vocabPending.length));
   if(has){
     // A selected row can disappear - published, reverted, or removed - so prune
     // stale keys rather than letting a bulk action target something that is gone.
