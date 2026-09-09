@@ -40,7 +40,7 @@ token or know it exists.
    - **Repository access**: only `mismo-business-glossary`
    - **Repository permissions**: **Contents: read and write** — nothing else
    - **Expiration**: up to a year. Diarise the renewal; it is your job, not theirs.
-2. Open the console and press **Connect…**
+2. Open the console and press **Sign in…** in the panel on the left
 3. Enter the facilitator's name, the repository (`owner/repository`), the branch
    (`main`), and the token. The name is recorded on every change — the token belongs
    to the account rather than the person, so without it the history cannot tell one
@@ -53,6 +53,33 @@ any other publishing credential.
 
 When the token expires the console says so plainly, keeps the draft safe locally, and
 carries on letting them edit. Nothing is lost; it just stops saving until reconnected.
+
+## Guided tour
+
+The console opens a short guided tour the first time it is used, and it can be reopened at
+any time from **Getting started** in the top right. It spotlights each part of the screen in
+turn, opens the edit form and stages an example so the pending area has something in it,
+and cleans up after itself. With sound on it reads each step aloud and moves on when it
+finishes; the speaker button beside **Close tour** silences it.
+
+The voice comes from the browser. The natural-sounding ones — the console prefers
+**Sonia** — are only available in **Microsoft Edge** and need a network connection.
+Other browsers fall back to whatever built-in voice the computer has.
+
+## The panel on the left
+
+Two headline numbers: how many terms there are, and how many need a human decision.
+Beneath them the sections carry a coloured edge in their own state — green when settled,
+amber when something wants attention. Anything that *replaces* what is in the browser
+(loading the online copy, importing a change-set, restoring a backup) sits behind a drawer
+that says so, since each discards unsaved work.
+
+## Publishing is protected
+
+The console refuses to publish, and will not save automatically, while the repository holds
+a newer draft than this browser has loaded. Without that, a fresh browser — which starts
+from the copy of the glossary shipped inside the console — could publish that older copy
+over every version since. The panel says when this is the case and offers to load.
 
 ## Day-to-day
 
@@ -79,8 +106,8 @@ individual, so a handover is short:
    nothing.
 3. **Issue a new token** for the incoming facilitator, on the same terms: this
    repository only, Contents read and write.
-4. On their machine, press **Connect…**, enter their name and the new token, then
-   **Load from repository**.
+4. On their machine, press **Sign in…**, enter their name and the new token, then accept
+   the offer to load the online copy.
 
 They receive the published glossary and the most recent saved draft. Nothing needs to
 be copied off the old laptop, and the old laptop keeps nothing usable.
@@ -108,5 +135,6 @@ can be produced by hand.
 history. `.console/draft.json` at any past commit can be restored — ask whoever
 administers the repository.
 
-**Starting fresh on a new machine.** Connect, then **Load from repository**. That pulls
-the published glossary plus the most recent saved draft.
+**Starting fresh on a new machine.** Sign in, then accept the offer to load — or later, open
+**Replace what is in this browser** and choose **Load the online copy**. That pulls the
+published glossary plus the most recent saved draft.

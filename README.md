@@ -31,6 +31,7 @@ data/
   reference.json        focus area / term type / source descriptions
 console/
   index.html            management console
+docs/mockups/           layout explorations, kept for reference, not deployed
 .console/
   draft.json            work in progress, saved daily by the console
 docs/
