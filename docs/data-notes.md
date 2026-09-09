@@ -130,6 +130,32 @@ Note that **none of these are fixed in `data/glossary.json`** — it is a faithf
 extraction of the baseline. Fixes belong in the console, which stages them for
 individual approval, followed by a re-export.
 
+## Links inside definitions
+
+A definition may link to another glossary term or to a web address. The syntax is plain
+text, so it survives a change-set CSV and MISMO's upload format unchanged:
+
+| Written | Shows as |
+| --- | --- |
+| `[[Escrow]]` | a link to the term *Escrow* |
+| `[[Escrow\|escrow account]]` | the same link, reading "escrow account" |
+| `[MERS manual](https://members.mersinc.org)` | a link to that address |
+| `https://members.mersinc.org` | linked where it stands |
+
+Everything else is escaped. That is not incidental: the definition of **XML Element**
+legitimately contains `<ElementName>Actual Data</ElementName>`, which would disappear if
+definitions were treated as markup. Links come only from the syntax above, never from
+raw HTML in the data.
+
+Links to terms are written by **name**, not by ID. Asking an author to paste a UUID into
+prose would guarantee the feature went unused. The cost is that renaming a term breaks
+links written to its old name — the console reports those under **Link to a term that
+does not exist**, naming the target, and a staged edit containing one cannot be applied.
+
+This is deliberately separate from the **AKA** and **Related** fields. Those are
+structured relationships between whole terms, stored as IDs and unaffected by renaming.
+A link inside a definition is a reference in a sentence.
+
 ## Latent synonym data
 
 Some definitions are already synonym pointers written as prose. `Impound` is defined as

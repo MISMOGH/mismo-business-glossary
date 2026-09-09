@@ -184,6 +184,13 @@
   .lres{border:1px solid var(--line); border-radius:8px; margin-top:6px; max-height:190px;
         overflow-y:auto; display:none;}
   .lres.show{display:block;}
+  .deftools{display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:7px;}
+  .defprev{border:1px solid var(--line); border-radius:8px; padding:9px 11px; background:var(--paper);
+           font-size:13px; line-height:1.6; color:var(--ink-soft); min-height:20px;}
+  .defprev:empty:before{content:'Nothing yet.'; color:var(--ink-faint);}
+  .dlink{color:var(--brand); border-bottom:1px solid var(--brand-soft);}
+  .dlink.ext:after{content:'\2197'; font-size:.8em; margin-left:2px; opacity:.7;}
+  .dlink.dead{color:var(--rem-text); border-bottom:1px dotted var(--rem-text); cursor:help;}
   .lrow{padding:8px 11px; cursor:pointer; border-bottom:1px solid var(--line); font-size:12.5px;}
   .lrow:last-child{border-bottom:none;}
   .lrow:hover{background:var(--brand-soft);}
@@ -575,7 +582,18 @@
     <!-- textarea, not <input type=text>: text inputs silently strip newlines, and
          some terms legitimately contain them -->
     <textarea id="mTerm" class="short"></textarea></div>
-  <div class="field"><label>Definition *</label><textarea id="mDefn"></textarea></div>
+  <div class="field"><label>Definition *</label>
+    <textarea id="mDefn" rows="5"></textarea>
+    <div class="deftools">
+      <button type="button" class="btn sm" id="mLinkTerm">Link a term…</button>
+      <button type="button" class="btn sm" id="mLinkUrl">Web link…</button>
+      <span class="fh" style="margin:0;">Type <code>[[Term name]]</code> to link another entry, or
+        <code>[label](https://…)</code> for a web address. Plain text — it survives the change-set CSV.</span>
+    </div>
+    <div id="mLinkPick" class="lres"></div>
+    <div class="fh" style="margin-top:8px;">Preview</div>
+    <div id="mDefPreview" class="defprev"></div>
+  </div>
   <div class="field"><label>Term type</label><input type="text" id="mType" placeholder="Data|Process">
     <div class="picker" id="mTypePick"></div><div class="fh">Pipe-separated. Click to toggle.</div></div>
   <div class="field"><label>Focus area</label><input type="text" id="mArea" placeholder="#LDD|#Origination">
@@ -803,6 +821,11 @@ const ISSUE_RULES=[
   {type:'blank-type',severity:'warning',title:'Missing term type',
    desc:'No term type recorded. The correct value cannot be inferred, so this needs a decision.',
    fields:['TermType'], detect:v=>v.trim()==='', fix:null},
+  {type:'dead-link',severity:'error',title:'Link to a term that does not exist',
+   desc:'The definition links to another glossary term by name, and no term has that name. Usually the target was renamed or removed after the link was written. Correct the name, or remove the link.',
+   fields:['Definition'],
+   detect:v=>defLinkTargets(v).some(n=>!termByName(n)),
+   fix:null},
   {type:'off-vocab',severity:'error',title:'Value outside the vocabulary',
    desc:'This term carries a classification that is not in the controlled list, so nothing can filter or report on it reliably. Either correct the term, or add the value to the list if it is legitimate.',
    fields:['TermType','FocusArea','Source'],
@@ -832,6 +855,10 @@ function detectIssues(){
       // wrong yet — it is a preview of what deleting would cause. Reporting the
       // two identically sends people looking for a change that never happened.
       let bad=null, pendingDel=null;
+      if(rule.type==='dead-link'){
+        bad=defLinkTargets(v).filter(n=>!termByName(n));
+        if(!bad.length) return;
+      }
       if(rule.type==='off-vocab'){
         const f=vfield(key), known=effectiveVocab(key);
         const unknown=cellValues(row,f).filter(x=>!known.includes(x));
@@ -1895,6 +1922,42 @@ function ttsWire(step){
   };
 }
 
+/* ============================================================================ LINKS IN DEFINITIONS
+   The same syntax the public page renders. It is plain text, so it survives a
+   change-set CSV and MISMO's upload format unchanged:
+
+     [[Escrow]] · [[Escrow|escrow account]] · [label](https://…) · bare URLs
+
+   Links are written by term name rather than by ID. Asking an author to paste a
+   UUID into prose would guarantee the feature went unused; the cost is that
+   renaming a term breaks links written to its old name, which is why there is a
+   rule below that finds them. */
+const DEF_LINK=/\[\[([^\]|]+?)(?:\|([^\]]+?))?\]\]|\[([^\]]+?)\]\((https?:\/\/[^\s)]+)\)|(https?:\/\/[^\s<>"')\]]+)/g;
+const termByName=q=>master.find(r=>String(r.Term||'').replace(/\s+/g,' ').trim().toLowerCase()
+                                  ===String(q).replace(/\s+/g,' ').trim().toLowerCase());
+
+function defLinkTargets(text){
+  const out=[]; DEF_LINK.lastIndex=0; let m;
+  while((m=DEF_LINK.exec(String(text||'')))!==null) if(m[1]!==undefined) out.push(m[1].trim());
+  return out;
+}
+/* Preview only — the console never stores rendered markup, just the text. */
+function previewDefinition(text){
+  const src=String(text||'').replace(/\s+/g,' ').trim();
+  let out='', last=0, m; DEF_LINK.lastIndex=0;
+  while((m=DEF_LINK.exec(src))!==null){
+    out+=esc(src.slice(last,m.index));
+    const [,tName,tLabel,mdLabel,mdUrl,bare]=m;
+    if(tName!==undefined){
+      const t=termByName(tName);
+      out+=`<span class="dlink ${t?'':'dead'}" title="${t?'Links to '+esc(t.Term):'No term named &quot;'+esc(tName)+'&quot;'}">${esc(tLabel||tName)}</span>`;
+    }else if(mdUrl) out+=`<span class="dlink ext" title="${esc(mdUrl)}">${esc(mdLabel)}</span>`;
+    else out+=`<span class="dlink ext" title="${esc(bare)}">${esc(bare)}</span>`;
+    last=m.index+m[0].length;
+  }
+  return out+esc(src.slice(last));
+}
+
 /* ============================================================================ GUIDED TOUR
    Steps point at real elements rather than describing them, and any step whose
    target is not on screen is skipped — the panel changes shape with the state
@@ -2802,6 +2865,8 @@ function openEdit(key){
     renderLinkField(f.key);
   });
   $('mErr').classList.remove('show');
+  $('mLinkPick').classList.remove('show'); $('mLinkPick').innerHTML='';
+  renderDefPreview();
   $('mRemove').classList.toggle('hidden',isNew);
   $('mUnstage').classList.toggle('hidden',!(!isNew&&staged[key]));
   $('modalBg').classList.add('open');
@@ -3299,6 +3364,54 @@ async function loadFromRepo(btn){
 }
 
 $('btnTour').onclick=startTour;
+/* Inserting at the cursor rather than appending: a link usually belongs in the
+   middle of a sentence, and making the author retype it defeats the point. */
+function insertAtCursor(el, text){
+  const a=el.selectionStart??el.value.length, b=el.selectionEnd??a;
+  el.value=el.value.slice(0,a)+text+el.value.slice(b);
+  const at=a+text.length;
+  el.focus(); el.setSelectionRange(at,at);
+  renderDefPreview();
+}
+function renderDefPreview(){
+  const p=$('mDefPreview'); if(p) p.innerHTML=previewDefinition($('mDefn').value);
+}
+$('mDefn').addEventListener('input', renderDefPreview);
+
+$('mLinkTerm').onclick=()=>{
+  const box=$('mLinkPick');
+  box.innerHTML=`<div style="padding:8px 10px;"><input type="text" id="mLinkQ"
+    placeholder="Search for a term to link…" style="width:100%;"></div><div id="mLinkHits"></div>`;
+  box.classList.add('show');
+  const q=$('mLinkQ'); q.focus();
+  q.addEventListener('input',()=>{
+    const v=q.value.trim().toLowerCase();
+    const self=$('mId').value;
+    const hits=v.length<2?[]:master.filter(r=>r.ID!==self&&r.Term.toLowerCase().includes(v)).slice(0,10);
+    $('mLinkHits').innerHTML=hits.length?hits.map(r=>`<div class="lrow" data-ins="${esc(r.Term)}">
+        <div>${esc(r.Term)}</div><div class="d">${esc(String(r.Definition||'').slice(0,100))}</div></div>`).join('')
+      :`<div class="lrow" style="cursor:default;color:var(--ink-soft);">${v.length<2?'Type at least two letters.':'No matching terms.'}</div>`;
+  });
+  $('mLinkHits')?.addEventListener?.('click',()=>{});
+  box.onclick=e=>{
+    const row=e.target.closest('[data-ins]'); if(!row) return;
+    const sel=$('mDefn').value.slice($('mDefn').selectionStart, $('mDefn').selectionEnd).trim();
+    // A selection becomes the link's visible words; otherwise the term name is used.
+    insertAtCursor($('mDefn'), sel ? `[[${row.dataset.ins}|${sel}]]` : `[[${row.dataset.ins}]]`);
+    box.classList.remove('show'); box.innerHTML='';
+  };
+};
+
+$('mLinkUrl').onclick=()=>{
+  const el=$('mDefn');
+  const sel=el.value.slice(el.selectionStart, el.selectionEnd).trim();
+  const url=prompt('Web address (must start with https://):', 'https://');
+  if(!url) return;
+  if(!/^https?:\/\//i.test(url)){ alert('That does not look like a web address. It should start with https://'); return; }
+  const label=sel || prompt('Words to show for the link:', url) || url;
+  insertAtCursor(el, `[${label}](${url})`);
+};
+
 $('mCancel').onclick=closeModal; $('mSave').onclick=saveEdit;
 $('mRemove').onclick=stageRemove; $('mUnstage').onclick=unstage;
 $('modalBg').onclick=e=>{if(e.target===$('modalBg')) closeModal();};

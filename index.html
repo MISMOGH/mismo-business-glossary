@@ -92,6 +92,12 @@
   .idx-body{display:none; padding:2px 20px 20px;}
   .idx-row.open .idx-body{display:block;}
   .idx-def{font-size:15px; line-height:1.68; margin:6px 0 16px; max-width:70ch;}
+  .deflink{color:var(--brand); text-decoration:none; border-bottom:1px solid var(--brand-soft);}
+  .deflink:hover{border-bottom-color:var(--brand); background:var(--brand-soft);}
+  .deflink.ext:after{content:'\2197'; font-size:.8em; margin-left:2px; opacity:.7;}
+  /* A link written to a term that no longer exists is shown, not hidden: the
+     reader can see the reference was intended and the console flags it. */
+  .deflink.dead{color:var(--ink-soft); border-bottom:1px dotted var(--ink-faint); cursor:help;}
   .idx-row.target{animation:flash 1.6s ease;}
   @keyframes flash{0%,55%{background:#FFF8DC;}100%{background:transparent;}}
 
@@ -320,6 +326,7 @@ async function load(){
       let s=slug(t.term);
       if(bySlug.has(s)) s=`${s}-${t.id.slice(0,6)}`;
       t._slug=s; bySlug.set(s,t);
+      termByName.set(flat(t.term).toLowerCase(), t);
     }
 
     // Reverse link maps, built once. The previous version scanned every term for
@@ -404,6 +411,62 @@ const relOf=t=>{
     .filter(id=>id!==t.id && !a.has(id));
 };
 
+/* ============================================================================ LINKS IN DEFINITIONS
+   Definitions are author-written text and must never be trusted as markup — one
+   of them legitimately contains <ElementName>Actual Data</ElementName> as an XML
+   example, which would vanish if the field were treated as HTML. So everything
+   is escaped, and links come only from an explicit syntax:
+
+     [[Escrow]]                  a link to another glossary term
+     [[Escrow|escrow account]]   the same, shown as different words
+     [label](https://example.org)
+     https://example.org         a bare URL, linked where it stands
+
+   The syntax is plain text, so it survives a change-set CSV and MISMO's upload
+   format unchanged. */
+const LINK_SYNTAX=/\[\[([^\]|]+?)(?:\|([^\]]+?))?\]\]|\[([^\]]+?)\]\((https?:\/\/[^\s)]+)\)|(https?:\/\/[^\s<>"')\]]+)/g;
+
+/* Resolved by name rather than by ID. A definition is written by a person, and
+   asking them to paste a UUID into prose would guarantee it is never used. The
+   cost is that renaming a term breaks links written to its old name, which the
+   console reports as an issue. */
+const termByName=new Map();
+
+function renderDefinition(text, q){
+  /* Whitespace is collapsed once, here, rather than per fragment. Doing it per
+     fragment trimmed the space either side of every link, so words ran into the
+     link text. */
+  const src=flat(text);
+  let out='', last=0, m;
+  LINK_SYNTAX.lastIndex=0;
+  while((m=LINK_SYNTAX.exec(src))!==null){
+    out+=hlPart(src.slice(last,m.index), q);
+    const [, tName, tLabel, mdLabel, mdUrl, bare]=m;
+    if(tName!==undefined){
+      const t=termByName.get(flat(tName).toLowerCase());
+      const shown=tLabel||tName;
+      out+= t ? `<a class="deflink" href="#${esc(t._slug)}" data-goterm="${esc(t._slug)}">${hlPart(shown,q)}</a>`
+              : `<span class="deflink dead" title="No term named &quot;${esc(tName)}&quot;">${hlPart(shown,q)}</span>`;
+    }else if(mdUrl){
+      out+=`<a class="deflink ext" href="${esc(mdUrl)}" target="_blank" rel="noopener noreferrer">${hlPart(mdLabel,q)}</a>`;
+    }else{
+      out+=`<a class="deflink ext" href="${esc(bare)}" target="_blank" rel="noopener noreferrer">${hlPart(bare,q)}</a>`;
+    }
+    last=m.index+m[0].length;
+  }
+  return out+hlPart(src.slice(last), q);
+}
+
+/* The search highlight applies to the plain runs between links, so a match
+   inside link text is still marked without the anchor being broken apart. */
+function hlPart(s,q){
+  const x=String(s??'');
+  if(!q) return esc(x);
+  const i=x.toLowerCase().indexOf(q.toLowerCase());
+  if(i<0) return esc(x);
+  return esc(x.slice(0,i))+'<mark>'+esc(x.slice(i,i+q.length))+'</mark>'+esc(x.slice(i+q.length));
+}
+
 /* ============================================================================ LIST */
 const hl=s=>{const x=flat(s); if(!q) return esc(x);
   const i=x.toLowerCase().indexOf(q.toLowerCase()); if(i<0) return esc(x);
@@ -423,7 +486,7 @@ function relCell(label,ids){
 function buildBody(t){
   const aka=akaOf(t), rel=relOf(t);
   const url=location.origin+location.pathname+'#'+t._slug;
-  return `<p class="idx-def">${hl(t.definition)}</p>
+  return `<p class="idx-def">${renderDefinition(t.definition, q)}</p>
     <div class="cls3">${KINDS.map(k=>{
       const vals=split(t[k.field]);
       return `<div><div class="blk-k">${k.label}</div><div class="blk-v">${
@@ -691,6 +754,9 @@ $('list').addEventListener('click',async e=>{
     try{ await navigator.clipboard.writeText(cp.dataset.copy); cp.textContent='Copied'; }
     catch{ cp.textContent='Copy failed'; }
     setTimeout(()=>{cp.textContent='Copy link';},1600); return; }
+
+  const dl=e.target.closest('[data-goterm]');
+  if(dl){ e.preventDefault(); e.stopPropagation(); openTerm(dl.dataset.goterm); return; }
 
   const go=e.target.closest('[data-go]');
   if(go){ e.stopPropagation(); openTerm(go.dataset.go); return; }
