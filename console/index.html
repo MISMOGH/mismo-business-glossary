@@ -281,6 +281,14 @@
      A spotlight rather than a wall of text: each step points at the thing it
      is describing, because "the panel on the left" means nothing until you can
      see which panel is meant. */
+  /* Suppressed while a step reveals something: animating from the old position
+     to a target that is simultaneously being scrolled into view reads as a
+     lurch rather than a movement. */
+  .tour-spot.jump, .tour-card.jump{transition:none;}
+  /* The last card on the page cannot be scrolled to the top, so a tall target
+     down there leaves no room for the step describing it. Temporary room to
+     scroll into, removed when the tour ends. */
+  body.tour-running{padding-bottom:70vh;}
   .tour-spot{position:fixed; border-radius:10px; pointer-events:none; z-index:2000;
     box-shadow:0 0 0 4px rgba(18,93,171,.35), 0 0 0 9999px rgba(16,27,51,.62);
     transition:top .28s cubic-bezier(.4,0,.2,1), left .28s cubic-bezier(.4,0,.2,1),
@@ -441,7 +449,7 @@
         <div id="vocabPending"></div>
         <div id="stagedFilter"></div>
         <div id="stagedList"></div>
-        <div style="display:flex; gap:9px; flex-wrap:wrap; margin-top:14px;">
+        <div id="pendingActions" style="display:flex; gap:9px; flex-wrap:wrap; margin-top:14px;">
           <button class="btn ok" id="btnApply">Apply changes</button>
           <button class="btn ok" id="btnApplyVocab">Apply classification changes</button>
           <button class="btn" id="btnExportChanges">Export change-set CSV</button>
@@ -1816,11 +1824,29 @@ const TOUR=[
      <p>Saving here does not change the glossary — it <strong>stages</strong> the edit for review. The
      term stays exactly as it was until you apply it.</p>`},
 
-  {sel:'#exportCard', title:'Pending changes', demo:'stage',
-   body:`<p>Anything staged appears here showing what it will change, old value beside new. It is
-     only on screen when something is waiting.</p>
-     <p>Six checks run before anything can be applied — hover <strong>What is checked</strong> to
-     read them. <strong>Apply changes</strong> moves them into the draft.</p>`},
+  {sel:'#exportCard', title:'The staging area', demo:'stage',
+   body:`<p>Nothing you edit changes the glossary straight away. It collects here first, so a batch of
+     work can be checked as a set before any of it lands.</p>
+     <p>The counts across the top summarise what is waiting, and <strong>six checks</strong> run
+     against every entry — hover <strong>What is checked</strong> to read them. Nothing can be applied
+     until they pass.</p>
+     <p class="drhint" style="margin:0;">The entries below are examples added by this tour. They are
+     removed when you leave this part.</p>`},
+
+  {sel:'#vocabPending', title:'Classification changes', demo:'stage',
+   body:`<p>Renaming, adding or deleting a term type, focus area or source appears here first — with
+     <strong>how many terms it will rewrite</strong> before you commit to it.</p>
+     <p>That number matters: renaming a widely used focus area can touch thousands of terms in one
+     go. <strong>Undo</strong> withdraws it, and nothing is rewritten until you press
+     <strong>Apply classification changes</strong>.</p>`},
+
+  {sel:'#stagedList', title:'Term edits, and what happens next', demo:'stage',
+   body:`<p>Each staged term edit shows exactly which fields differ, old value struck through beside
+     the new one. <strong>Edit</strong> reopens it; <strong>Remove</strong> takes it out of the list
+     without touching the term.</p>
+     <p>Then <strong>Apply changes</strong> moves them into the draft, <strong>Export change-set
+     CSV</strong> hands them to another system, and <strong>Discard all changes</strong> throws the
+     lot away.</p>`},
 
   {sel:'#btnPublic', title:'Seeing it as members do',
    body:`<p>Opens the public glossary in a new tab — the page MISMO members actually read.</p>
@@ -1844,7 +1870,7 @@ let tourAt=0, tourSteps=[], tourOn=false;
    the step is left, and again if the tour is closed part-way, so the tour never
    leaves anything behind. The staged example is held in memory only — persist()
    is not called and the hourly save is suspended while the tour is running. */
-let tourDemo={key:null, prev:null, drawer:null, modal:false};
+let tourDemo={key:null, prev:null, drawer:null, modal:false, vocabLen:null};
 
 function tourEnter(step){
   if(step.drawer){
@@ -1855,14 +1881,23 @@ function tourEnter(step){
     const t=master.find(r=>!staged[r.ID]) || master[0];
     if(t){ openEdit(t.ID); tourDemo.modal=true; $('modalBg').classList.add('tour-lift'); }
   }
-  if(step.demo==='stage'){
+  if(step.demo==='stage' && !tourDemo.key){
     const t=master.find(r=>!staged[r.ID]);
     if(t){
       tourDemo.key=t.ID; tourDemo.prev=staged[t.ID];
       staged[t.ID]={action:'update', origin:'manual',
         data:{...t, Definition:'An example edit, added by the tour and removed when it moves on.'}};
-      renderAll();
     }
+    // A classification change as well, so the step showing them has something
+    // real to point at. A rarely used value keeps the example small and honest.
+    const f=VOCAB_FIELDS.find(v=>v.key==='FocusArea');
+    const from=[...effectiveVocab('FocusArea')]
+      .sort((a,b)=>(vocabUsage('FocusArea').get(a)||0)-(vocabUsage('FocusArea').get(b)||0))[0];
+    if(from){
+      tourDemo.vocabLen=vocabPending.length;
+      stageVocab('rename','FocusArea',from,from+'Example');
+    }
+    renderAll();
   }
 }
 
@@ -1872,9 +1907,12 @@ function tourExit(){
     $('modalBg').classList.remove('tour-lift');
     closeModal(); tourDemo.modal=false;
   }
-  if(tourDemo.key){
-    if(tourDemo.prev) staged[tourDemo.key]=tourDemo.prev; else delete staged[tourDemo.key];
-    tourDemo.key=null; tourDemo.prev=null;
+  if(tourDemo.key||typeof tourDemo.vocabLen==='number'){
+    if(tourDemo.key){
+      if(tourDemo.prev) staged[tourDemo.key]=tourDemo.prev; else delete staged[tourDemo.key];
+    }
+    if(typeof tourDemo.vocabLen==='number') vocabPending.length=tourDemo.vocabLen;
+    tourDemo.key=null; tourDemo.prev=null; tourDemo.vocabLen=null;
     renderAll();
   }
 }
@@ -1899,13 +1937,14 @@ function startTour(){
   // exempt from the visibility filter that skips steps pointing at nothing.
   tourSteps=TOUR.filter(s=>s.demo||tourVisible(s.sel));
   if(!tourSteps.length) return;
-  tourAt=0; tourOn=true; tourDemo={key:null,prev:null,drawer:null,modal:false};
+  tourAt=0; tourOn=true; tourDemo={key:null,prev:null,drawer:null,modal:false,vocabLen:null};
   if(!$('tourSpot')){
     document.body.insertAdjacentHTML('beforeend',
       `<div class="tour-spot" id="tourSpot"></div><div class="tour-card" id="tourCard"></div>
        <button class="btn sm tour-skip" id="tourSkip">Close tour</button>`);
     $('tourSkip').onclick=endTour;
   }
+  document.body.classList.add('tour-running');
   ['tourSpot','tourCard','tourSkip'].forEach(id=>$(id).style.display='');
   tourEnter(tourSteps[0]);
   drawTour(true);
@@ -1916,6 +1955,7 @@ function startTour(){
 
 function endTour(){
   tourExit();
+  document.body.classList.remove('tour-running');
   tourOn=false;
   ['tourSpot','tourCard','tourSkip'].forEach(id=>{const e=$(id); if(e) e.style.display='none';});
   removeEventListener('resize',tourReflow);
@@ -1931,25 +1971,43 @@ function tourKeys(e){
   else if(e.key==='ArrowRight'||e.key==='Enter'){ e.preventDefault(); tourGo(1); }
   else if(e.key==='ArrowLeft'){ e.preventDefault(); tourGo(-1); }
 }
-function tourGo(d){
-  const n=tourAt+d;
+/* Consecutive steps can share a demonstration — the staging area takes three
+   steps to walk through, and tearing the example down between them would make
+   the panel vanish and reappear each time. */
+function tourMove(n){
   if(n<0) return;
-  tourExit();
+  const cur=tourSteps[tourAt], nxt=tourSteps[n];
+  const carry = nxt && cur && cur.demo && cur.demo===nxt.demo;
+  if(!carry) tourExit();
   if(n>=tourSteps.length){ endTour(); return; }
-  tourAt=n; tourEnter(tourSteps[tourAt]); drawTour(true);
+  const grew=!carry;
+  tourAt=n;
+  if(!carry) tourEnter(nxt); else if(nxt.drawer) tourEnter(nxt);
+  drawTour(true, grew);
 }
+function tourGo(d){ tourMove(tourAt+d); }
 
-function drawTour(scroll){
+function drawTour(scroll, jump){
   if(!tourOn) return;
   const step=tourSteps[tourAt], spot=$('tourSpot'), card=$('tourCard');
   const el=step.sel?document.querySelector(step.sel):null;
+  // A step that just created its target has nothing to animate from.
+  if(jump||step.demo){ spot.classList.add('jump'); card.classList.add('jump'); }
 
   // A fixed-position target — a modal — is already where it is going to be, and
   // scrolling the page under it only moves everything else.
   const fixed=el && getComputedStyle(el.closest('.modal-bg')||el).position==='fixed';
   if(el && scroll && !fixed){
     const r=el.getBoundingClientRect();
-    if(r.top<90||r.bottom>innerHeight-90) el.scrollIntoView({behavior:'smooth',block:'center'});
+    // A tall target centred leaves too little room above or below for the card,
+    // and none beside it if it is also wide — so it is aligned to the top
+    // instead, which frees the space underneath.
+    const tall=r.height>innerHeight*0.38;
+    if(tall||r.top<90||r.bottom>innerHeight-90)
+      // Instant for a revealed target: a smooth scroll running underneath a
+      // spotlight that is also moving is what made this step feel snagged.
+      el.scrollIntoView({behavior:(jump||step.demo)?'auto':'smooth',
+                         block:tall?'start':'center'});
   }
 
   if(scroll){
@@ -1963,8 +2021,7 @@ function drawTour(scroll){
       </div>`;
     $('tourNext').onclick=()=>tourGo(1);
     if($('tourBack')) $('tourBack').onclick=()=>tourGo(-1);
-      card.querySelectorAll('[data-tdot]').forEach(dd=>dd.onclick=()=>{
-      tourExit(); tourAt=+dd.dataset.tdot; tourEnter(tourSteps[tourAt]); drawTour(true);});
+      card.querySelectorAll('[data-tdot]').forEach(dd=>dd.onclick=()=>tourMove(+dd.dataset.tdot));
   }
 
   const place=()=>{
@@ -1992,6 +2049,7 @@ function drawTour(scroll){
     if(spaceRight>=w)      left=Math.min(r.right+gap, innerWidth-w-16);
     else if(spaceLeft>=w)  left=Math.max(16, r.left-gap-w);
     else{
+      // No room beside: go under, then over, and only overlap as a last resort.
       left=Math.min(Math.max(16,r.left), innerWidth-w-16);
       if(r.bottom+gap+h<=innerHeight-16)   top=r.bottom+gap;
       else if(r.top-gap-h>=16)             top=r.top-gap-h;
@@ -2003,8 +2061,13 @@ function drawTour(scroll){
   place();
   // Placed again once the card has its real height, so a tall step does not
   // hang off the bottom of the window.
-  requestAnimationFrame(place);
-  if(scroll){ setTimeout(place,340); setTimeout(place,520); }
+  requestAnimationFrame(()=>{
+    place();
+    // Animation restored a frame later, so movement between ordinary steps is
+    // still smooth.
+    requestAnimationFrame(()=>{ spot.classList.remove('jump'); card.classList.remove('jump'); });
+  });
+  if(scroll){ setTimeout(place,320); setTimeout(place,520); }
 }
 
 /* ============================================================================ DRAFT / RELEASE
