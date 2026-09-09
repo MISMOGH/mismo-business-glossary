@@ -498,7 +498,7 @@
     <div class="recip" id="relRecip"></div></div>
   <div class="modal-foot">
     <button class="btn danger" id="mRemove">Stage removal</button>
-    <button class="btn" id="mUnstage">Unstage</button>
+    <button class="btn" id="mUnstage">Remove</button>
     <div style="flex:1;"></div>
     <button class="btn" id="mCancel">Cancel</button>
     <button class="btn primary" id="mSave">Save</button>
@@ -1469,7 +1469,7 @@ function renderStagedList(){
         <strong>${esc(t)}</strong>
         <span class="sd-origin">${e.origin==='import'?'from import':'edited here'}</span>
         <button class="btn sm" data-sdedit="${esc(key)}">Edit</button>
-        <button class="btn sm danger" data-sddrop="${esc(key)}">Unstage</button>
+        <button class="btn sm danger" data-sddrop="${esc(key)}" title="Remove this from the pending list — the term itself is not changed">Remove</button>
       </div>${body}</div>`;
   }).join('')}</div>`;
 
